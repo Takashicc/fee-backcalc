@@ -1,5 +1,5 @@
 use anyhow::Result;
-use fee_tax_calculator::{
+use fee_backcalc::{
     AppConfig, CalculatedRow, InputTaxMode, RoundingMode, SiteFee, calculate_row, format_yen, jp,
     load_config, parse_non_negative_number, save_config, trim_trailing_zero, validate_fee_percent,
 };
@@ -23,17 +23,20 @@ impl ResultTableDelegate {
     fn new() -> Self {
         Self {
             columns: vec![
-                Column::new("site_name", jp("サイト名")).width(px(170.0)),
+                Column::new("site_name", jp("依頼サイト")).width(px(160.0)),
                 Column::new("fee_percent", jp("手数料率"))
                     .width(px(90.0))
                     .text_right(),
-                Column::new("fee_amount", jp("手数料額"))
-                    .width(px(110.0))
+                Column::new("fee_amount", jp("差し引かれる手数料"))
+                    .width(px(150.0))
+                    .text_right(),
+                Column::new("exclusive_total", jp("請求額(税抜)"))
+                    .width(px(120.0))
                     .text_right(),
                 Column::new("tax_amount", jp("消費税額"))
                     .width(px(110.0))
                     .text_right(),
-                Column::new("inclusive_total", jp("税込合計"))
+                Column::new("inclusive_total", jp("税込請求額"))
                     .width(px(120.0))
                     .text_right(),
             ],
@@ -74,8 +77,9 @@ impl TableDelegate for ResultTableDelegate {
             0 => row.site_name.clone(),
             1 => format!("{}%", trim_trailing_zero(row.fee_percent)),
             2 => format_yen(row.fee_amount),
-            3 => format_yen(row.tax_amount),
-            4 => format_yen(row.inclusive_total),
+            3 => format_yen(row.exclusive_total),
+            4 => format_yen(row.tax_amount),
+            5 => format_yen(row.inclusive_total),
             _ => String::new(),
         };
 
@@ -96,7 +100,7 @@ impl TableDelegate for ResultTableDelegate {
             .items_center()
             .text_sm()
             .text_color(cx.theme().muted_foreground)
-            .child(jp("表示できる計算結果がありません。"))
+            .child(jp("表示できる請求額がありません。"))
     }
 }
 
@@ -125,16 +129,17 @@ impl AppState {
 
         let base_amount_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("ex: 1000")
+                .placeholder("例: 100000")
                 .default_value(config.base_amount.clone())
         });
         let tax_rate_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("ex: 10")
+                .placeholder("例: 10")
                 .default_value(config.tax_rate.clone())
         });
-        let site_name_input = cx.new(|cx| InputState::new(window, cx).placeholder("site name"));
-        let site_fee_input = cx.new(|cx| InputState::new(window, cx).placeholder("fee percent"));
+        let site_name_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("例: CrowdWorks"));
+        let site_fee_input = cx.new(|cx| InputState::new(window, cx).placeholder("例: 20"));
         let result_table = cx.new(|cx| {
             TableState::new(ResultTableDelegate::new(), window, cx)
                 .col_movable(false)
@@ -338,7 +343,7 @@ impl AppState {
         if self.base_amount.trim().is_empty() {
             None
         } else {
-            parse_non_negative_number("ベース金額", self.base_amount.trim()).err()
+            parse_non_negative_number("受け取りたい金額", self.base_amount.trim()).err()
         }
     }
 
@@ -353,7 +358,7 @@ impl AppState {
         if site_name.is_empty() && site_fee.is_empty() {
             None
         } else if site_name.is_empty() {
-            Some(jp("サイト名を入力してください"))
+            Some(jp("依頼サイト名を入力してください"))
         } else {
             validate_fee_percent(site_fee).err()
         }
@@ -364,7 +369,7 @@ impl AppState {
             return Ok(Vec::new());
         }
 
-        let base_amount = parse_non_negative_number("ベース金額", self.base_amount.trim())?;
+        let base_amount = parse_non_negative_number("受け取りたい金額", self.base_amount.trim())?;
         let tax_rate_percent = parse_non_negative_number("消費税率", self.tax_rate.trim())?;
         let tax_rate = tax_rate_percent / 100.0;
 
@@ -519,11 +524,11 @@ impl AppState {
                     .rounded_xl()
                     .border_1()
                     .border_color(cx.theme().border)
-                    .child(div().font_semibold().child(jp("入力")))
+                    .child(div().font_semibold().child(jp("逆算条件")))
                     .child(
                         v_flex()
                             .gap_2()
-                            .child(div().text_sm().child(jp("ベース金額")))
+                            .child(div().text_sm().child(jp("受け取りたい金額")))
                             .child(Input::new(&self.base_amount_input).cleanable(true).w_full())
                             .when_some(base_error, |this, message| {
                                 this.child(Self::render_error(message, cx))
@@ -532,7 +537,7 @@ impl AppState {
                     .child(
                         v_flex()
                             .gap_2()
-                            .child(div().text_sm().child(jp("入力金額の扱い")))
+                            .child(div().text_sm().child(jp("受け取りたい金額の入力形式")))
                             .child(
                                 h_flex()
                                     .gap_2()
@@ -570,6 +575,12 @@ impl AppState {
                         v_flex()
                             .gap_2()
                             .child(div().text_sm().child(jp("消費税率 (%)")))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(jp("手数料の逆算に加えて、請求時の消費税もあわせて計算します。")),
+                            )
                             .child(Input::new(&self.tax_rate_input).w_full())
                             .when_some(tax_error, |this, message| {
                                 this.child(Self::render_error(message, cx))
@@ -638,13 +649,13 @@ impl AppState {
                         h_flex()
                             .justify_between()
                             .items_center()
-                            .child(div().font_semibold().child(jp("サイト管理")))
+                            .child(div().font_semibold().child(jp("手数料設定")))
                             .when_some(
                                 self.editing_index.and_then(|index| self.sites.get(index)),
                                 |this, site| {
                                     this.child(
                                         div().text_sm().text_color(cx.theme().primary).child(
-                                            format!("{}", jp(&format!("{}を編集中", site.name))),
+                                            format!("{}を編集中", site.name),
                                         ),
                                     )
                                 },
@@ -653,7 +664,7 @@ impl AppState {
                     .child(
                         v_flex()
                             .gap_2()
-                            .child(div().text_sm().child(jp("サイト名")))
+                            .child(div().text_sm().child(jp("依頼サイト名")))
                             .child(Input::new(&self.site_name_input).cleanable(true).w_full()),
                     )
                     .child(
@@ -671,9 +682,9 @@ impl AppState {
                             .child(
                                 Button::new("save-site")
                                     .label(if self.editing_index.is_some() {
-                                        jp("サイトを更新")
+                                        jp("設定を更新")
                                     } else {
-                                        jp("サイトを追加")
+                                        jp("設定を追加")
                                     })
                                     .primary()
                                     .on_click(cx.listener(Self::add_or_update_site)),
@@ -681,7 +692,7 @@ impl AppState {
                             .when(self.editing_index.is_some(), |this| {
                                 this.child(
                                     Button::new("cancel-edit")
-                                        .label(jp("編集をやめる"))
+                                        .label(jp("編集をキャンセル"))
                                         .ghost()
                                         .on_click(cx.listener(Self::cancel_edit)),
                                 )
@@ -692,7 +703,7 @@ impl AppState {
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(jp("まだサイトは登録されていません。")),
+                                .child(jp("まだ手数料設定はありません。")),
                         )
                     })
                     .children(site_rows),
@@ -700,10 +711,7 @@ impl AppState {
             .into_any_element()
     }
 
-    fn render_right_panel(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_right_panel(&self, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .gap_3()
             .flex_1()
@@ -711,13 +719,15 @@ impl AppState {
             .rounded_xl()
             .border_1()
             .border_color(cx.theme().border)
-            .child(div().font_semibold().child(jp("計算結果")))
+            .child(div().font_semibold().child(jp("逆算結果")))
             .when(self.sites.is_empty(), |this| {
                 this.child(
                     div()
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
-                        .child(jp("サイトを登録すると、ここに結果が表示されます。")),
+                        .child(jp(
+                            "手数料設定を追加すると、サイトごとの請求額がここに表示されます。",
+                        )),
                 )
             })
             .when_some(self.result_error.clone(), |this, message| {
@@ -750,8 +760,13 @@ impl Render for AppState {
                     .child(
                         v_flex()
                             .gap_2()
-                            .child(div().text_2xl().font_semibold().child(jp("手数料・消費税計算")))
-                .child(div().text_sm().text_color(cx.theme().muted_foreground).child(jp("ベース金額から、合計額基準の手数料額と消費税額、税込み金額をサイト別に一覧表示します。"))),
+                            .child(div().text_2xl().font_semibold().child(jp("Fee Backcalc")))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(jp("受け取りたい金額から逆算して、サイト手数料を差し引かれても希望額が残る請求金額を求めます。消費税もあわせて確認できます。")),
+                            ),
                     )
                     .when_some(self.save_error.clone(), |this, message| {
                         this.child(div().p_3().rounded_lg().bg(cx.theme().danger.opacity(0.1)).child(Self::render_error(message, cx)))

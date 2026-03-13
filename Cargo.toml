@@ -1,14 +1,14 @@
 [package]
-name = "test"
+name = "fee-backcalc"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "fee_tax_calculator"
+name = "fee_backcalc"
 path = "src/lib.rs"
 
 [[bin]]
-name = "test"
+name = "fee-backcalc"
 path = "src/main.rs"
 test = false
 

@@ -20,8 +20,8 @@ pub enum InputTaxMode {
 impl InputTaxMode {
     pub fn label(self) -> &'static str {
         match self {
-            Self::TaxExclusive => "税抜き入力",
-            Self::TaxInclusive => "税込み入力",
+            Self::TaxExclusive => "税抜きで入力",
+            Self::TaxInclusive => "税込みで入力",
         }
     }
 }
@@ -160,7 +160,7 @@ pub fn config_path() -> PathBuf {
         .or_else(|| env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."));
 
-    base_dir.join("fee-tax-calculator").join("config.json")
+    base_dir.join("fee-backcalc").join("config.json")
 }
 
 pub fn load_config() -> AppConfig {
@@ -210,7 +210,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("time")
             .as_nanos();
-        env::temp_dir().join(format!("fee-tax-calculator-{name}-{unique}.json"))
+        env::temp_dir().join(format!("fee-backcalc-{name}-{unique}.json"))
     }
 
     #[test]
@@ -338,5 +338,12 @@ mod tests {
         let loaded = load_config_from_path(&path).expect("load");
 
         assert_eq!(loaded, AppConfig::default());
+    }
+
+    #[test]
+    fn config_path_uses_fee_backcalc_directory() {
+        let path = config_path();
+
+        assert!(path.to_string_lossy().contains("fee-backcalc"));
     }
 }
