@@ -609,7 +609,7 @@ impl AppState {
                 .iter()
                 .enumerate()
                 .map(|(index, row)| {
-                    let inclusive_total = format_yen(row.inclusive_total);
+                    let invoice_amount = format_yen(row.invoice_amount);
                     h_flex()
                         .w_full()
                         .border_b_1()
@@ -626,20 +626,10 @@ impl AppState {
                             Some(132.0),
                             true,
                         ))
-                        .child(self.render_result_cell(
-                            format_yen(row.exclusive_total),
-                            Some(120.0),
-                            true,
-                        ))
-                        .child(self.render_result_cell(
-                            format_yen(row.tax_amount),
-                            Some(108.0),
-                            true,
-                        ))
                         .child(self.render_copyable_result_cell(
-                            ("copy-inclusive-total", index),
-                            inclusive_total,
-                            format!("{} の税込請求額をコピーしました", row.site_name),
+                            ("copy-invoice-amount", index),
+                            invoice_amount,
+                            format!("{} の請求額をコピーしました", row.site_name),
                             Some(128.0),
                         ))
                         .into_any_element()
@@ -656,18 +646,16 @@ impl AppState {
             .bg(cx.theme().table)
             .child(
                 h_flex()
-                    .w_full()
+                    // .w_full()
                     .bg(cx.theme().table_head)
                     .border_b_1()
                     .border_color(cx.theme().table_row_border)
                     .child(self.render_result_head("依頼サイト", None, false, cx))
                     .child(self.render_result_head("手数料率", Some(88.0), true, cx))
-                    .child(self.render_result_head("差し引かれる手数料", Some(132.0), true, cx))
-                    .child(self.render_result_head("請求額(税抜)", Some(120.0), true, cx))
-                    .child(self.render_result_head("消費税額", Some(108.0), true, cx))
-                    .child(self.render_result_head("税込請求額", Some(128.0), true, cx)),
+                    .child(self.render_result_head("差し引かれる手数料", Some(160.0), true, cx))
+                    .child(self.render_result_head("請求額", Some(128.0), true, cx)),
             )
-            .child(v_flex().w_full().children(body_rows))
+            .child(v_flex().children(body_rows))
             .child(
                 div()
                     .px_3()

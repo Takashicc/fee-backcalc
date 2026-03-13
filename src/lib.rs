@@ -69,9 +69,7 @@ pub struct CalculatedRow {
     pub site_name: String,
     pub fee_percent: f64,
     pub fee_amount: f64,
-    pub exclusive_total: f64,
-    pub tax_amount: f64,
-    pub inclusive_total: f64,
+    pub invoice_amount: f64,
 }
 
 pub fn parse_non_negative_number(field_name: &str, text: &str) -> Result<f64, String> {
@@ -114,28 +112,23 @@ pub fn calculate_row(
     tax_rate: f64,
     rounding_mode: RoundingMode,
 ) -> CalculatedRow {
-    let base_exclusive = match input_tax_mode {
-        InputTaxMode::TaxExclusive => base_amount,
-        InputTaxMode::TaxInclusive => base_amount / (1.0 + tax_rate),
-    };
-
     let fee_rate = site.fee_percent / 100.0;
-    let exclusive_total = if fee_rate >= 1.0 {
+    let desired_received_amount = match input_tax_mode {
+        InputTaxMode::TaxExclusive => base_amount * (1.0 + tax_rate),
+        InputTaxMode::TaxInclusive => base_amount,
+    };
+    let invoice_amount = if fee_rate >= 1.0 {
         f64::INFINITY
     } else {
-        base_exclusive / (1.0 - fee_rate)
+        desired_received_amount / (1.0 - fee_rate)
     };
-    let fee_amount = exclusive_total - base_exclusive;
-    let tax_amount = exclusive_total * tax_rate;
-    let inclusive_total = exclusive_total + tax_amount;
+    let fee_amount = invoice_amount * fee_rate;
 
     CalculatedRow {
         site_name: site.name.clone(),
         fee_percent: site.fee_percent,
         fee_amount: apply_rounding(fee_amount, rounding_mode),
-        exclusive_total: apply_rounding(exclusive_total, rounding_mode),
-        tax_amount: apply_rounding(tax_amount, rounding_mode),
-        inclusive_total: apply_rounding(inclusive_total, rounding_mode),
+        invoice_amount: apply_rounding(invoice_amount, rounding_mode),
     }
 }
 
@@ -228,10 +221,8 @@ mod tests {
             RoundingMode::Round,
         );
 
-        assert_eq!(row.fee_amount, 111.0);
-        assert_eq!(row.exclusive_total, 1111.0);
-        assert_eq!(row.tax_amount, 111.0);
-        assert_eq!(row.inclusive_total, 1222.0);
+        assert_eq!(row.fee_amount, 122.0);
+        assert_eq!(row.invoice_amount, 1222.0);
     }
 
     #[test]
@@ -249,10 +240,8 @@ mod tests {
             RoundingMode::Round,
         );
 
-        assert_eq!(row.fee_amount, 111.0);
-        assert_eq!(row.exclusive_total, 1111.0);
-        assert_eq!(row.tax_amount, 111.0);
-        assert_eq!(row.inclusive_total, 1222.0);
+        assert_eq!(row.fee_amount, 122.0);
+        assert_eq!(row.invoice_amount, 1222.0);
     }
 
     #[test]
@@ -277,8 +266,53 @@ mod tests {
             RoundingMode::Round,
         );
 
-        assert!(high_tax.tax_amount > low_tax.tax_amount);
-        assert!(high_tax.inclusive_total > low_tax.inclusive_total);
+        assert!(high_tax.fee_amount > low_tax.fee_amount);
+        assert!(high_tax.invoice_amount > low_tax.invoice_amount);
+    }
+
+    #[test]
+    fn calculates_tax_exclusive_example_from_report() {
+        let site = SiteFee {
+            name: "A".to_string(),
+            fee_percent: 22.0,
+        };
+
+        let row = calculate_row(
+            &site,
+            10000.0,
+            InputTaxMode::TaxExclusive,
+            0.1,
+            RoundingMode::Round,
+        );
+
+        assert_eq!(row.fee_amount, 3103.0);
+        assert_eq!(row.invoice_amount, 14103.0);
+    }
+
+    #[test]
+    fn tax_inclusive_input_does_not_add_tax_twice() {
+        let site = SiteFee {
+            name: "A".to_string(),
+            fee_percent: 10.0,
+        };
+
+        let low_tax = calculate_row(
+            &site,
+            1100.0,
+            InputTaxMode::TaxInclusive,
+            0.08,
+            RoundingMode::Round,
+        );
+        let high_tax = calculate_row(
+            &site,
+            1100.0,
+            InputTaxMode::TaxInclusive,
+            0.10,
+            RoundingMode::Round,
+        );
+
+        assert_eq!(low_tax.fee_amount, high_tax.fee_amount);
+        assert_eq!(low_tax.invoice_amount, high_tax.invoice_amount);
     }
 
     #[test]
@@ -305,9 +339,7 @@ mod tests {
         );
 
         assert_eq!(row.fee_amount, 0.0);
-        assert_eq!(row.exclusive_total, 0.0);
-        assert_eq!(row.tax_amount, 0.0);
-        assert_eq!(row.inclusive_total, 0.0);
+        assert_eq!(row.invoice_amount, 0.0);
     }
 
     #[test]
