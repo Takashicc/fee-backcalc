@@ -1,5 +1,5 @@
 use anyhow::Result;
-use fee_backcalc::{AppModel, ModelUpdate, jp, load_config, save_config};
+use fee_backcalc::{APP_ID, APP_TITLE, AppModel, ModelUpdate, jp, load_config, save_config};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
@@ -163,7 +163,7 @@ impl Render for AppState {
                         .child(
                             v_flex()
                                 .gap_2()
-                                .child(div().text_2xl().font_semibold().child(jp("Fee Backcalc")))
+                                .child(div().text_2xl().font_semibold().child(jp(APP_TITLE)))
                                 .child(
                                     div()
                                         .text_sm()
@@ -205,10 +205,20 @@ impl Render for AppState {
 }
 
 pub(crate) fn open_main_window(cx: &mut AsyncApp) -> Result<()> {
-    cx.open_window(WindowOptions::default(), |window, cx| {
-        let view = cx.new(|cx| AppState::new(window, cx));
-        cx.new(|cx| Root::new(view, window, cx))
-    })?;
+    cx.open_window(
+        WindowOptions {
+            titlebar: Some(TitlebarOptions {
+                title: Some(APP_TITLE.into()),
+                ..Default::default()
+            }),
+            app_id: Some(APP_ID.to_string()),
+            ..Default::default()
+        },
+        |window, cx| {
+            let view = cx.new(|cx| AppState::new(window, cx));
+            cx.new(|cx| Root::new(view, window, cx))
+        },
+    )?;
 
     Ok(())
 }

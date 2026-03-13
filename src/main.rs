@@ -8,6 +8,7 @@ fn main() {
     let app = Application::new().with_assets(Assets);
 
     app.run(|cx| {
+        configure_app(cx);
         gpui_component::init(cx);
 
         cx.spawn(async move |cx| {
@@ -16,4 +17,40 @@ fn main() {
         })
         .detach();
     });
+}
+
+fn configure_app(cx: &mut App) {
+    #[cfg(target_os = "macos")]
+    configure_macos_app_icon();
+
+    cx.activate(true);
+}
+
+#[cfg(target_os = "macos")]
+fn configure_macos_app_icon() {
+    use cocoa::{
+        appkit::{NSApp, NSApplication, NSImage},
+        base::{id, nil},
+        foundation::{NSData, NSUInteger},
+    };
+    use std::ffi::c_void;
+
+    static APP_ICON_PNG: &[u8] = include_bytes!("../assets/app-icon.png");
+
+    unsafe {
+        let app = NSApp();
+        if app.is_null() {
+            return;
+        }
+
+        let data: id = NSData::dataWithBytes_length_(
+            nil,
+            APP_ICON_PNG.as_ptr() as *const c_void,
+            APP_ICON_PNG.len() as NSUInteger,
+        );
+        let image: id = NSImage::initWithData_(NSImage::alloc(nil), data);
+        if !image.is_null() {
+            app.setApplicationIconImage_(image);
+        }
+    }
 }

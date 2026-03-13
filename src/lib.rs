@@ -5,6 +5,9 @@ mod format;
 mod model;
 mod validation;
 
+pub const APP_ID: &str = "com.takashicc.fee-backcalc";
+pub const APP_TITLE: &str = "Fee Backcalc";
+
 pub use app_model::{AppModel, ModelUpdate};
 pub use calc::{apply_rounding, calculate_row};
 pub use config::{
