@@ -6,101 +6,41 @@ use fee_backcalc::{
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Root, StyledExt as _,
+    ActiveTheme, IconName, IndexPath, Root, StyledExt as _, WindowExt as _,
     button::{Button, ButtonVariants as _},
+    clipboard::Clipboard,
     h_flex,
     input::{Input, InputEvent, InputState},
-    table::{Column, Table, TableDelegate, TableState},
+    scroll::ScrollableElement as _,
+    select::{Select, SelectEvent, SelectItem, SelectState},
     v_flex,
 };
+use gpui_component_assets::Assets;
 
-struct ResultTableDelegate {
-    columns: Vec<Column>,
-    rows: Vec<CalculatedRow>,
+#[derive(Clone)]
+struct EnumSelectItem<T: Clone> {
+    label: SharedString,
+    value: T,
 }
 
-impl ResultTableDelegate {
-    fn new() -> Self {
+impl<T: Clone> EnumSelectItem<T> {
+    fn new(label: impl Into<SharedString>, value: T) -> Self {
         Self {
-            columns: vec![
-                Column::new("site_name", jp("依頼サイト")).width(px(160.0)),
-                Column::new("fee_percent", jp("手数料率"))
-                    .width(px(90.0))
-                    .text_right(),
-                Column::new("fee_amount", jp("差し引かれる手数料"))
-                    .width(px(150.0))
-                    .text_right(),
-                Column::new("exclusive_total", jp("請求額(税抜)"))
-                    .width(px(120.0))
-                    .text_right(),
-                Column::new("tax_amount", jp("消費税額"))
-                    .width(px(110.0))
-                    .text_right(),
-                Column::new("inclusive_total", jp("税込請求額"))
-                    .width(px(120.0))
-                    .text_right(),
-            ],
-            rows: Vec::new(),
+            label: label.into(),
+            value,
         }
     }
-
-    fn set_rows(&mut self, rows: Vec<CalculatedRow>) {
-        self.rows = rows;
-    }
 }
 
-impl TableDelegate for ResultTableDelegate {
-    fn columns_count(&self, _: &App) -> usize {
-        self.columns.len()
+impl<T: Clone + 'static> SelectItem for EnumSelectItem<T> {
+    type Value = T;
+
+    fn title(&self) -> SharedString {
+        self.label.clone()
     }
 
-    fn rows_count(&self, _: &App) -> usize {
-        self.rows.len()
-    }
-
-    fn column(&self, col_ix: usize, _: &App) -> &Column {
-        &self.columns[col_ix]
-    }
-
-    fn render_td(
-        &mut self,
-        row_ix: usize,
-        col_ix: usize,
-        _: &mut Window,
-        _: &mut Context<TableState<Self>>,
-    ) -> impl IntoElement {
-        let Some(row) = self.rows.get(row_ix) else {
-            return div();
-        };
-
-        let value = match col_ix {
-            0 => row.site_name.clone(),
-            1 => format!("{}%", trim_trailing_zero(row.fee_percent)),
-            2 => format_yen(row.fee_amount),
-            3 => format_yen(row.exclusive_total),
-            4 => format_yen(row.tax_amount),
-            5 => format_yen(row.inclusive_total),
-            _ => String::new(),
-        };
-
-        div()
-            .size_full()
-            .when(col_ix != 0, |this| this.text_right())
-            .child(value)
-    }
-
-    fn render_empty(
-        &mut self,
-        _: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) -> impl IntoElement {
-        h_flex()
-            .size_full()
-            .justify_center()
-            .items_center()
-            .text_sm()
-            .text_color(cx.theme().muted_foreground)
-            .child(jp("表示できる請求額がありません。"))
+    fn value(&self) -> &Self::Value {
+        &self.value
     }
 }
 
@@ -109,7 +49,9 @@ struct AppState {
     tax_rate_input: Entity<InputState>,
     site_name_input: Entity<InputState>,
     site_fee_input: Entity<InputState>,
-    result_table: Entity<TableState<ResultTableDelegate>>,
+    input_tax_mode_select: Entity<SelectState<Vec<EnumSelectItem<InputTaxMode>>>>,
+    rounding_mode_select: Entity<SelectState<Vec<EnumSelectItem<RoundingMode>>>>,
+    result_rows: Vec<CalculatedRow>,
     base_amount: String,
     tax_rate: String,
     site_name: String,
@@ -124,8 +66,43 @@ struct AppState {
 }
 
 impl AppState {
+    const COMPACT_LAYOUT_BREAKPOINT: f32 = 1100.0;
+
+    fn mode_options() -> Vec<EnumSelectItem<InputTaxMode>> {
+        vec![
+            EnumSelectItem::new(
+                InputTaxMode::TaxExclusive.label(),
+                InputTaxMode::TaxExclusive,
+            ),
+            EnumSelectItem::new(
+                InputTaxMode::TaxInclusive.label(),
+                InputTaxMode::TaxInclusive,
+            ),
+        ]
+    }
+
+    fn rounding_options() -> Vec<EnumSelectItem<RoundingMode>> {
+        vec![
+            EnumSelectItem::new(RoundingMode::Round.label(), RoundingMode::Round),
+            EnumSelectItem::new(RoundingMode::Ceil.label(), RoundingMode::Ceil),
+            EnumSelectItem::new(RoundingMode::Floor.label(), RoundingMode::Floor),
+        ]
+    }
+
+    fn selected_index<T: PartialEq + Clone + 'static>(
+        items: &[EnumSelectItem<T>],
+        selected: &T,
+    ) -> Option<IndexPath> {
+        items
+            .iter()
+            .position(|item| item.value() == selected)
+            .map(IndexPath::new)
+    }
+
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let config = load_config();
+        let input_tax_mode_options = Self::mode_options();
+        let rounding_mode_options = Self::rounding_options();
 
         let base_amount_input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -140,13 +117,21 @@ impl AppState {
         let site_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("例: CrowdWorks"));
         let site_fee_input = cx.new(|cx| InputState::new(window, cx).placeholder("例: 20"));
-        let result_table = cx.new(|cx| {
-            TableState::new(ResultTableDelegate::new(), window, cx)
-                .col_movable(false)
-                .col_resizable(false)
-                .col_selectable(false)
-                .row_selectable(false)
-                .sortable(false)
+        let input_tax_mode_select = cx.new(|cx| {
+            SelectState::new(
+                input_tax_mode_options,
+                Self::selected_index(&Self::mode_options(), &config.input_tax_mode),
+                window,
+                cx,
+            )
+        });
+        let rounding_mode_select = cx.new(|cx| {
+            SelectState::new(
+                rounding_mode_options,
+                Self::selected_index(&Self::rounding_options(), &config.rounding_mode),
+                window,
+                cx,
+            )
         });
 
         let subscriptions = vec![
@@ -169,6 +154,24 @@ impl AppState {
                         this.persist();
                         cx.notify();
                     }
+                },
+            ),
+            cx.subscribe(
+                &input_tax_mode_select,
+                |this: &mut Self, _, event: &SelectEvent<Vec<EnumSelectItem<InputTaxMode>>>, cx| {
+                    let SelectEvent::Confirm(Some(mode)) = event else {
+                        return;
+                    };
+                    this.update_input_tax_mode(*mode, cx);
+                },
+            ),
+            cx.subscribe(
+                &rounding_mode_select,
+                |this: &mut Self, _, event: &SelectEvent<Vec<EnumSelectItem<RoundingMode>>>, cx| {
+                    let SelectEvent::Confirm(Some(mode)) = event else {
+                        return;
+                    };
+                    this.update_rounding_mode(*mode, cx);
                 },
             ),
             cx.subscribe(
@@ -196,7 +199,9 @@ impl AppState {
             tax_rate_input,
             site_name_input,
             site_fee_input,
-            result_table,
+            input_tax_mode_select,
+            rounding_mode_select,
+            result_rows: Vec::new(),
             base_amount: config.base_amount,
             tax_rate: config.tax_rate,
             site_name: String::new(),
@@ -228,26 +233,20 @@ impl AppState {
             .map(|err| format!("設定の保存に失敗しました: {err}"));
     }
 
-    fn set_input_tax_mode(
-        &mut self,
-        mode: InputTaxMode,
-        _: &ClickEvent,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn update_input_tax_mode(&mut self, mode: InputTaxMode, cx: &mut Context<Self>) {
+        if self.input_tax_mode == mode {
+            return;
+        }
         self.input_tax_mode = mode;
         self.recalculate_results(cx);
         self.persist();
         cx.notify();
     }
 
-    fn set_rounding_mode(
-        &mut self,
-        mode: RoundingMode,
-        _: &ClickEvent,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn update_rounding_mode(&mut self, mode: RoundingMode, cx: &mut Context<Self>) {
+        if self.rounding_mode == mode {
+            return;
+        }
         self.rounding_mode = mode;
         self.recalculate_results(cx);
         self.persist();
@@ -392,40 +391,19 @@ impl AppState {
         match self.calculated_rows() {
             Ok(rows) => {
                 self.result_error = None;
-                self.result_table.update(cx, |table, cx| {
-                    table.delegate_mut().set_rows(rows);
-                    table.refresh(cx);
-                });
+                self.result_rows = rows;
             }
             Err(error) => {
                 self.result_error = Some(error);
-                self.result_table.update(cx, |table, cx| {
-                    table.delegate_mut().set_rows(Vec::new());
-                    table.refresh(cx);
-                });
+                self.result_rows.clear();
             }
         }
+        cx.notify();
     }
 
     fn with_recalculated_results(mut self, cx: &mut Context<Self>) -> Self {
         self.recalculate_results(cx);
         self
-    }
-
-    fn render_mode_button(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        selected: bool,
-        on_click: impl Fn(&mut Self, &ClickEvent, &mut Window, &mut Context<Self>) + 'static,
-        cx: &mut Context<Self>,
-    ) -> Button {
-        let button = Button::new(id).label(label);
-        if selected {
-            button.primary().on_click(cx.listener(on_click))
-        } else {
-            button.ghost().on_click(cx.listener(on_click))
-        }
     }
 
     fn render_error(message: String, cx: &mut Context<Self>) -> AnyElement {
@@ -436,7 +414,171 @@ impl AppState {
             .into_any_element()
     }
 
-    fn render_site_row(&self, index: usize, site: &SiteFee, cx: &mut Context<Self>) -> AnyElement {
+    fn render_result_head(
+        &self,
+        label: &str,
+        width: Option<f32>,
+        text_right: bool,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let head = div()
+            .px_3()
+            .py_2()
+            .text_sm()
+            .font_semibold()
+            .text_color(cx.theme().table_head_foreground)
+            .child(jp(label));
+        let head = match width {
+            Some(width) => head.w(px(width)).flex_none(),
+            None => head.flex_1(),
+        };
+
+        if text_right { head.text_right() } else { head }
+    }
+
+    fn render_result_cell(&self, value: String, width: Option<f32>, text_right: bool) -> Div {
+        let cell = div().px_3().py_3().text_sm().child(value);
+        let cell = match width {
+            Some(width) => cell.w(px(width)).flex_none(),
+            None => cell.flex_1(),
+        };
+
+        if text_right { cell.text_right() } else { cell }
+    }
+
+    fn render_copyable_result_cell(
+        &self,
+        clipboard_id: impl Into<ElementId>,
+        value: String,
+        notification: String,
+        width: Option<f32>,
+    ) -> AnyElement {
+        let displayed_value = value.clone();
+        let copied_value = value.clone();
+
+        let cell = h_flex()
+            .px_3()
+            .py_3()
+            .gap_2()
+            .items_center()
+            .justify_end()
+            .text_sm()
+            .child(div().text_right().child(displayed_value))
+            .child(Clipboard::new(clipboard_id).value(copied_value).on_copied(
+                move |_, window, cx| {
+                    window.push_notification(notification.clone(), cx);
+                },
+            ));
+        let cell = match width {
+            Some(width) => cell.w(px(width)).flex_none(),
+            None => cell.flex_1(),
+        };
+
+        cell.into_any_element()
+    }
+
+    fn render_results_table(&self, cx: &mut Context<Self>) -> AnyElement {
+        let body_rows: Vec<AnyElement> = if self.result_rows.is_empty() {
+            vec![
+                h_flex()
+                    .w_full()
+                    .justify_center()
+                    .items_center()
+                    .px_3()
+                    .py_8()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(jp("表示できる請求額がありません。"))
+                    .into_any_element(),
+            ]
+        } else {
+            self.result_rows
+                .iter()
+                .enumerate()
+                .map(|(index, row)| {
+                    let inclusive_total = format_yen(row.inclusive_total);
+                    h_flex()
+                        .w_full()
+                        .border_b_1()
+                        .border_color(cx.theme().table_row_border)
+                        .when(index % 2 == 1, |this| this.bg(cx.theme().table_even))
+                        .child(self.render_result_cell(row.site_name.clone(), None, false))
+                        .child(self.render_result_cell(
+                            format!("{}%", trim_trailing_zero(row.fee_percent)),
+                            Some(88.0),
+                            true,
+                        ))
+                        .child(self.render_result_cell(
+                            format_yen(row.fee_amount),
+                            Some(132.0),
+                            true,
+                        ))
+                        .child(self.render_result_cell(
+                            format_yen(row.exclusive_total),
+                            Some(120.0),
+                            true,
+                        ))
+                        .child(self.render_result_cell(
+                            format_yen(row.tax_amount),
+                            Some(108.0),
+                            true,
+                        ))
+                        .child(self.render_copyable_result_cell(
+                            ("copy-inclusive-total", index),
+                            inclusive_total,
+                            format!("{} の税込請求額をコピーしました", row.site_name),
+                            Some(128.0),
+                        ))
+                        .into_any_element()
+                })
+                .collect()
+        };
+
+        v_flex()
+            .w_full()
+            .min_w(px(680.0))
+            .rounded_lg()
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().table)
+            .child(
+                h_flex()
+                    .w_full()
+                    .bg(cx.theme().table_head)
+                    .border_b_1()
+                    .border_color(cx.theme().table_row_border)
+                    .child(self.render_result_head("依頼サイト", None, false, cx))
+                    .child(self.render_result_head("手数料率", Some(88.0), true, cx))
+                    .child(self.render_result_head("差し引かれる手数料", Some(132.0), true, cx))
+                    .child(self.render_result_head("請求額(税抜)", Some(120.0), true, cx))
+                    .child(self.render_result_head("消費税額", Some(108.0), true, cx))
+                    .child(self.render_result_head("税込請求額", Some(128.0), true, cx)),
+            )
+            .child(v_flex().w_full().children(body_rows))
+            .child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .border_t_1()
+                    .border_color(cx.theme().table_row_border)
+                    .child(format!("{} {}", self.result_rows.len(), jp("件の結果"))),
+            )
+            .into_any_element()
+    }
+
+    fn is_compact_layout(window: &Window) -> bool {
+        window.viewport_size().width <= px(Self::COMPACT_LAYOUT_BREAKPOINT)
+    }
+
+    fn render_site_row(
+        &self,
+        index: usize,
+        site: &SiteFee,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let editing = self.editing_index == Some(index);
         v_flex()
             .gap_2()
@@ -445,9 +587,13 @@ impl AppState {
             .border_1()
             .border_color(cx.theme().border)
             .child(
-                h_flex()
-                    .justify_between()
-                    .items_center()
+                div()
+                    .flex()
+                    .gap_3()
+                    .when(compact, |this| this.flex_col())
+                    .when(!compact, |this| {
+                        this.flex_row().justify_between().items_center()
+                    })
                     .child(
                         v_flex()
                             .gap_1()
@@ -477,8 +623,11 @@ impl AppState {
                             ),
                     )
                     .child(
-                        h_flex()
+                        div()
+                            .flex()
                             .gap_2()
+                            .when(compact, |this| this.flex_col())
+                            .when(!compact, |this| this.flex_row())
                             .child(
                                 Button::new(("edit-site", index))
                                     .label(jp("編集"))
@@ -505,18 +654,20 @@ impl AppState {
         base_error: Option<String>,
         tax_error: Option<String>,
         site_form_error: Option<String>,
+        compact: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let site_rows: Vec<AnyElement> = self
             .sites
             .iter()
             .enumerate()
-            .map(|(index, site)| self.render_site_row(index, site, cx))
+            .map(|(index, site)| self.render_site_row(index, site, compact, cx))
             .collect();
 
         v_flex()
             .gap_4()
-            .flex_1()
+            .w_full()
+            .when(!compact, |this| this.flex_1())
             .child(
                 v_flex()
                     .gap_3()
@@ -539,36 +690,10 @@ impl AppState {
                             .gap_2()
                             .child(div().text_sm().child(jp("受け取りたい金額の入力形式")))
                             .child(
-                                h_flex()
-                                    .gap_2()
-                                    .child(self.render_mode_button(
-                                        "mode-exclusive",
-                                        InputTaxMode::TaxExclusive.label(),
-                                        self.input_tax_mode == InputTaxMode::TaxExclusive,
-                                        |this, event, window, cx| {
-                                            this.set_input_tax_mode(
-                                                InputTaxMode::TaxExclusive,
-                                                event,
-                                                window,
-                                                cx,
-                                            )
-                                        },
-                                        cx,
-                                    ))
-                                    .child(self.render_mode_button(
-                                        "mode-inclusive",
-                                        InputTaxMode::TaxInclusive.label(),
-                                        self.input_tax_mode == InputTaxMode::TaxInclusive,
-                                        |this, event, window, cx| {
-                                            this.set_input_tax_mode(
-                                                InputTaxMode::TaxInclusive,
-                                                event,
-                                                window,
-                                                cx,
-                                            )
-                                        },
-                                        cx,
-                                    )),
+                                Select::new(&self.input_tax_mode_select)
+                                .placeholder(jp("入力形式を選択"))
+                                .icon(IconName::ChevronsUpDown)
+                                    .w_full(),
                             ),
                     )
                     .child(
@@ -591,50 +716,10 @@ impl AppState {
                             .gap_2()
                             .child(div().text_sm().child(jp("端数処理")))
                             .child(
-                                h_flex()
-                                    .gap_2()
-                                    .child(self.render_mode_button(
-                                        "rounding-round",
-                                        RoundingMode::Round.label(),
-                                        self.rounding_mode == RoundingMode::Round,
-                                        |this, event, window, cx| {
-                                            this.set_rounding_mode(
-                                                RoundingMode::Round,
-                                                event,
-                                                window,
-                                                cx,
-                                            )
-                                        },
-                                        cx,
-                                    ))
-                                    .child(self.render_mode_button(
-                                        "rounding-ceil",
-                                        RoundingMode::Ceil.label(),
-                                        self.rounding_mode == RoundingMode::Ceil,
-                                        |this, event, window, cx| {
-                                            this.set_rounding_mode(
-                                                RoundingMode::Ceil,
-                                                event,
-                                                window,
-                                                cx,
-                                            )
-                                        },
-                                        cx,
-                                    ))
-                                    .child(self.render_mode_button(
-                                        "rounding-floor",
-                                        RoundingMode::Floor.label(),
-                                        self.rounding_mode == RoundingMode::Floor,
-                                        |this, event, window, cx| {
-                                            this.set_rounding_mode(
-                                                RoundingMode::Floor,
-                                                event,
-                                                window,
-                                                cx,
-                                            )
-                                        },
-                                        cx,
-                                    )),
+                                Select::new(&self.rounding_mode_select)
+                                    .placeholder(jp("端数処理を選択"))
+                                    .icon(IconName::ChevronsUpDown)
+                                    .w_full(),
                             ),
                     ),
             )
@@ -677,8 +762,11 @@ impl AppState {
                             }),
                     )
                     .child(
-                        h_flex()
+                        div()
+                            .flex()
                             .gap_2()
+                            .when(compact, |this| this.flex_col())
+                            .when(!compact, |this| this.flex_row())
                             .child(
                                 Button::new("save-site")
                                     .label(if self.editing_index.is_some() {
@@ -711,10 +799,11 @@ impl AppState {
             .into_any_element()
     }
 
-    fn render_right_panel(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_right_panel(&self, compact: bool, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .gap_3()
-            .flex_1()
+            .w_full()
+            .when(!compact, |this| this.flex_1())
             .p_4()
             .rounded_xl()
             .border_1()
@@ -735,56 +824,73 @@ impl AppState {
             })
             .child(
                 div()
-                    .h(px(320.0))
-                    .child(Table::new(&self.result_table).stripe(true).bordered(true)),
+                    .w_full()
+                    .overflow_x_scrollbar()
+                    .child(self.render_results_table(cx)),
             )
             .into_any_element()
     }
 }
 
 impl Render for AppState {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let base_error = self.base_amount_error();
         let tax_error = self.tax_rate_error();
         let site_form_error = self.site_form_error();
+        let compact = Self::is_compact_layout(window);
 
         div()
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .p_6()
             .child(
-                v_flex()
-                    .gap_6()
+                div()
                     .size_full()
+                    .overflow_y_scrollbar()
                     .child(
                         v_flex()
-                            .gap_2()
-                            .child(div().text_2xl().font_semibold().child(jp("Fee Backcalc")))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(jp("受け取りたい金額から逆算して、サイト手数料を差し引かれても希望額が残る請求金額を求めます。消費税もあわせて確認できます。")),
-                            ),
-                    )
-                    .when_some(self.save_error.clone(), |this, message| {
-                        this.child(div().p_3().rounded_lg().bg(cx.theme().danger.opacity(0.1)).child(Self::render_error(message, cx)))
-                    })
-                    .child(
-                        h_flex()
-                            .items_start()
                             .gap_6()
                             .w_full()
-                            .child(self.render_left_panel(base_error, tax_error, site_form_error, cx))
-                            .child(self.render_right_panel(cx)),
+                            .when(compact, |this| this.p_4())
+                            .when(!compact, |this| this.p_6())
+                            .child(
+                                v_flex()
+                                    .gap_2()
+                                    .child(div().text_2xl().font_semibold().child(jp("Fee Backcalc")))
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(jp("受け取りたい金額から逆算して、サイト手数料を差し引かれても希望額が残る請求金額を求めます。消費税もあわせて確認できます。")),
+                                    ),
+                            )
+                            .when_some(self.save_error.clone(), |this, message| {
+                                this.child(div().p_3().rounded_lg().bg(cx.theme().danger.opacity(0.1)).child(Self::render_error(message, cx)))
+                            })
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_start()
+                                    .gap_6()
+                                    .w_full()
+                                    .when(compact, |this| this.flex_col())
+                                    .when(!compact, |this| this.flex_row())
+                                    .child(self.render_left_panel(
+                                        base_error,
+                                        tax_error,
+                                        site_form_error,
+                                        compact,
+                                        cx,
+                                    ))
+                                    .child(self.render_right_panel(compact, cx)),
+                            ),
                     ),
             )
     }
 }
 
 fn main() {
-    let app = Application::new();
+    let app = Application::new().with_assets(Assets);
 
     app.run(|cx| {
         gpui_component::init(cx);
