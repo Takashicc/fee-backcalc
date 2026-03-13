@@ -838,6 +838,7 @@ impl Render for AppState {
         let tax_error = self.tax_rate_error();
         let site_form_error = self.site_form_error();
         let compact = Self::is_compact_layout(window);
+        let notification_layer = Root::render_notification_layer(window, cx);
 
         div()
             .size_full()
@@ -886,6 +887,7 @@ impl Render for AppState {
                             ),
                     ),
             )
+            .children(notification_layer)
     }
 }
 
