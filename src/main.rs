@@ -10,7 +10,9 @@ use gpui_component::{
     button::{Button, ButtonVariants as _},
     clipboard::Clipboard,
     h_flex,
-    input::{Input, InputEvent, InputState},
+    input::{
+        Input, InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction,
+    },
     scroll::ScrollableElement as _,
     select::{Select, SelectEvent, SelectItem, SelectState},
     v_flex,
@@ -67,6 +69,9 @@ struct AppState {
 
 impl AppState {
     const COMPACT_LAYOUT_BREAKPOINT: f32 = 1100.0;
+    const BASE_AMOUNT_STEP: f64 = 1000.0;
+    const RATE_STEP: f64 = 0.1;
+    const SITE_FEE_MAX: f64 = 99.9;
 
     fn mode_options() -> Vec<EnumSelectItem<InputTaxMode>> {
         vec![
@@ -107,6 +112,10 @@ impl AppState {
         let base_amount_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("例: 100000")
+                .mask_pattern(MaskPattern::Number {
+                    separator: Some(','),
+                    fraction: None,
+                })
                 .default_value(config.base_amount.clone())
         });
         let tax_rate_input = cx.new(|cx| {
@@ -117,6 +126,11 @@ impl AppState {
         let site_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("例: CrowdWorks"));
         let site_fee_input = cx.new(|cx| InputState::new(window, cx).placeholder("例: 20"));
+
+        base_amount_input.update(cx, |input, cx| {
+            input.set_value(config.base_amount.clone(), window, cx);
+        });
+
         let input_tax_mode_select = cx.new(|cx| {
             SelectState::new(
                 input_tax_mode_options,
@@ -139,21 +153,55 @@ impl AppState {
                 &base_amount_input,
                 |this: &mut Self, input, event: &InputEvent, cx| {
                     if matches!(event, InputEvent::Change) {
-                        this.base_amount = input.read(cx).value().to_string();
+                        this.base_amount = Self::number_input_value(&input, cx);
                         this.recalculate_results(cx);
                         cx.notify();
                     }
+                },
+            ),
+            cx.subscribe_in(
+                &base_amount_input,
+                window,
+                |_: &mut Self, input, event: &NumberInputEvent, window, cx| {
+                    let NumberInputEvent::Step(action) = event;
+                    Self::step_number_input(
+                        input,
+                        *action,
+                        Self::BASE_AMOUNT_STEP,
+                        0.0,
+                        None,
+                        Self::format_decimal_number,
+                        window,
+                        cx,
+                    );
                 },
             ),
             cx.subscribe(
                 &tax_rate_input,
                 |this: &mut Self, input, event: &InputEvent, cx| {
                     if matches!(event, InputEvent::Change) {
-                        this.tax_rate = input.read(cx).value().to_string();
+                        this.tax_rate = Self::number_input_value(&input, cx);
                         this.recalculate_results(cx);
                         this.persist();
                         cx.notify();
                     }
+                },
+            ),
+            cx.subscribe_in(
+                &tax_rate_input,
+                window,
+                |_: &mut Self, input, event: &NumberInputEvent, window, cx| {
+                    let NumberInputEvent::Step(action) = event;
+                    Self::step_number_input(
+                        input,
+                        *action,
+                        Self::RATE_STEP,
+                        0.0,
+                        None,
+                        Self::format_rate_number,
+                        window,
+                        cx,
+                    );
                 },
             ),
             cx.subscribe(
@@ -187,9 +235,26 @@ impl AppState {
                 &site_fee_input,
                 |this: &mut Self, input, event: &InputEvent, cx| {
                     if matches!(event, InputEvent::Change) {
-                        this.site_fee = input.read(cx).value().to_string();
+                        this.site_fee = Self::number_input_value(&input, cx);
                         cx.notify();
                     }
+                },
+            ),
+            cx.subscribe_in(
+                &site_fee_input,
+                window,
+                |_: &mut Self, input, event: &NumberInputEvent, window, cx| {
+                    let NumberInputEvent::Step(action) = event;
+                    Self::step_number_input(
+                        input,
+                        *action,
+                        Self::RATE_STEP,
+                        0.0,
+                        Some(Self::SITE_FEE_MAX),
+                        Self::format_rate_number,
+                        window,
+                        cx,
+                    );
                 },
             ),
         ];
@@ -231,6 +296,54 @@ impl AppState {
         self.save_error = save_config(&self.config())
             .err()
             .map(|err| format!("設定の保存に失敗しました: {err}"));
+    }
+
+    fn number_input_value(input: &Entity<InputState>, cx: &App) -> String {
+        input.read(cx).unmask_value().to_string()
+    }
+
+    fn round_to_tenths(value: f64) -> f64 {
+        (value * 10.0).round() / 10.0
+    }
+
+    fn format_decimal_number(value: f64) -> String {
+        trim_trailing_zero(value)
+    }
+
+    fn format_rate_number(value: f64) -> String {
+        trim_trailing_zero(Self::round_to_tenths(value))
+    }
+
+    fn step_number_input(
+        input: &Entity<InputState>,
+        action: StepAction,
+        step: f64,
+        min: f64,
+        max: Option<f64>,
+        formatter: fn(f64) -> String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let raw_value = Self::number_input_value(input, cx);
+        let current_value = raw_value.trim().parse::<f64>().unwrap_or(0.0);
+        let delta = match action {
+            StepAction::Increment => step,
+            StepAction::Decrement => -step,
+        };
+
+        let mut next_value = current_value + delta;
+        if next_value < min {
+            next_value = min;
+        }
+        if let Some(max) = max {
+            if next_value > max {
+                next_value = max;
+            }
+        }
+
+        input.update(cx, |state, cx| {
+            state.set_value(formatter(next_value), window, cx);
+        });
     }
 
     fn update_input_tax_mode(&mut self, mode: InputTaxMode, cx: &mut Context<Self>) {
@@ -680,7 +793,7 @@ impl AppState {
                         v_flex()
                             .gap_2()
                             .child(div().text_sm().child(jp("受け取りたい金額")))
-                            .child(Input::new(&self.base_amount_input).cleanable(true).w_full())
+                            .child(NumberInput::new(&self.base_amount_input).w_full())
                             .when_some(base_error, |this, message| {
                                 this.child(Self::render_error(message, cx))
                             }),
@@ -706,7 +819,7 @@ impl AppState {
                                     .text_color(cx.theme().muted_foreground)
                                     .child(jp("手数料の逆算に加えて、請求時の消費税もあわせて計算します。")),
                             )
-                            .child(Input::new(&self.tax_rate_input).w_full())
+                            .child(NumberInput::new(&self.tax_rate_input).w_full())
                             .when_some(tax_error, |this, message| {
                                 this.child(Self::render_error(message, cx))
                             }),
@@ -756,7 +869,7 @@ impl AppState {
                         v_flex()
                             .gap_2()
                             .child(div().text_sm().child(jp("手数料率 (%)")))
-                            .child(Input::new(&self.site_fee_input).cleanable(true).w_full())
+                            .child(NumberInput::new(&self.site_fee_input).w_full())
                             .when_some(site_form_error, |this, message| {
                                 this.child(Self::render_error(message, cx))
                             }),
