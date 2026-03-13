@@ -10,6 +10,12 @@ fn main() {
     app.run(|cx| {
         configure_app(cx);
         gpui_component::init(cx);
+        cx.on_window_closed(|cx| {
+            if cx.windows().is_empty() {
+                cx.quit();
+            }
+        })
+        .detach();
 
         cx.spawn(async move |cx| {
             ui::open_main_window(cx)?;
