@@ -1,7 +1,8 @@
 use anyhow::Result;
 use fee_backcalc::{
-    AppConfig, CalculatedRow, InputTaxMode, RoundingMode, SiteFee, calculate_row, format_yen, jp,
-    load_config, parse_non_negative_number, save_config, trim_trailing_zero, validate_fee_percent,
+    AppConfig, CalculatedRow, InputTaxMode, RoundingMode, SiteFee, calculate_row, format_yen,
+    integer_string, jp, load_config, parse_non_negative_number, save_config, trim_trailing_zero,
+    validate_fee_percent,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
@@ -532,6 +533,7 @@ impl AppState {
         label: &str,
         width: Option<f32>,
         text_right: bool,
+        text_color: Option<Hsla>,
         cx: &mut Context<Self>,
     ) -> Div {
         let head = div()
@@ -539,7 +541,7 @@ impl AppState {
             .py_2()
             .text_sm()
             .font_semibold()
-            .text_color(cx.theme().table_head_foreground)
+            .text_color(text_color.unwrap_or(cx.theme().table_head_foreground))
             .child(jp(label));
         let head = match width {
             Some(width) => head.w(px(width)).flex_none(),
@@ -549,8 +551,18 @@ impl AppState {
         if text_right { head.text_right() } else { head }
     }
 
-    fn render_result_cell(&self, value: String, width: Option<f32>, text_right: bool) -> Div {
+    fn render_result_cell(
+        &self,
+        value: String,
+        width: Option<f32>,
+        text_right: bool,
+        text_color: Option<Hsla>,
+    ) -> Div {
         let cell = div().px_3().py_3().text_sm().child(value);
+        let cell = match text_color {
+            Some(text_color) => cell.text_color(text_color),
+            None => cell,
+        };
         let cell = match width {
             Some(width) => cell.w(px(width)).flex_none(),
             None => cell.flex_1(),
@@ -559,16 +571,18 @@ impl AppState {
         if text_right { cell.text_right() } else { cell }
     }
 
+    fn verification_text_color() -> Hsla {
+        green()
+    }
+
     fn render_copyable_result_cell(
         &self,
         clipboard_id: impl Into<ElementId>,
-        value: String,
+        displayed_value: String,
+        copied_value: String,
         notification: String,
         width: Option<f32>,
     ) -> AnyElement {
-        let displayed_value = value.clone();
-        let copied_value = value.clone();
-
         let cell = h_flex()
             .px_3()
             .py_3()
@@ -610,27 +624,43 @@ impl AppState {
                 .enumerate()
                 .map(|(index, row)| {
                     let invoice_amount = format_yen(row.invoice_amount);
+                    let invoice_amount_to_copy = integer_string(row.invoice_amount);
+                    let received_amount = format_yen(row.received_amount);
                     h_flex()
                         .w_full()
                         .border_b_1()
                         .border_color(cx.theme().table_row_border)
                         .when(index % 2 == 1, |this| this.bg(cx.theme().table_even))
-                        .child(self.render_result_cell(row.site_name.clone(), None, false))
+                        .child(self.render_result_cell(
+                            row.site_name.clone(),
+                            Some(168.0),
+                            false,
+                            None,
+                        ))
                         .child(self.render_result_cell(
                             format!("{}%", trim_trailing_zero(row.fee_percent)),
                             Some(88.0),
                             true,
+                            None,
                         ))
                         .child(self.render_result_cell(
                             format_yen(row.fee_amount),
-                            Some(132.0),
+                            Some(160.0),
                             true,
+                            None,
                         ))
                         .child(self.render_copyable_result_cell(
                             ("copy-invoice-amount", index),
                             invoice_amount,
+                            invoice_amount_to_copy,
                             format!("{} の請求額をコピーしました", row.site_name),
-                            Some(128.0),
+                            Some(136.0),
+                        ))
+                        .child(self.render_result_cell(
+                            received_amount,
+                            Some(164.0),
+                            true,
+                            Some(Self::verification_text_color()),
                         ))
                         .into_any_element()
                 })
@@ -639,7 +669,7 @@ impl AppState {
 
         v_flex()
             .w_full()
-            .min_w(px(680.0))
+            .min_w(px(716.0))
             .rounded_lg()
             .border_1()
             .border_color(cx.theme().border)
@@ -650,10 +680,23 @@ impl AppState {
                     .bg(cx.theme().table_head)
                     .border_b_1()
                     .border_color(cx.theme().table_row_border)
-                    .child(self.render_result_head("依頼サイト", None, false, cx))
-                    .child(self.render_result_head("手数料率", Some(88.0), true, cx))
-                    .child(self.render_result_head("差し引かれる手数料", Some(160.0), true, cx))
-                    .child(self.render_result_head("請求額", Some(128.0), true, cx)),
+                    .child(self.render_result_head("依頼サイト", Some(168.0), false, None, cx))
+                    .child(self.render_result_head("手数料率", Some(88.0), true, None, cx))
+                    .child(self.render_result_head(
+                        "差し引かれる手数料",
+                        Some(160.0),
+                        true,
+                        None,
+                        cx,
+                    ))
+                    .child(self.render_result_head("請求額", Some(136.0), true, None, cx))
+                    .child(self.render_result_head(
+                        "受け取る金額",
+                        Some(164.0),
+                        true,
+                        Some(Self::verification_text_color()),
+                        cx,
+                    )),
             )
             .child(v_flex().children(body_rows))
             .child(

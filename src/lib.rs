@@ -70,6 +70,7 @@ pub struct CalculatedRow {
     pub fee_percent: f64,
     pub fee_amount: f64,
     pub invoice_amount: f64,
+    pub received_amount: f64,
 }
 
 pub fn parse_non_negative_number(field_name: &str, text: &str) -> Result<f64, String> {
@@ -123,12 +124,15 @@ pub fn calculate_row(
         desired_received_amount / (1.0 - fee_rate)
     };
     let fee_amount = invoice_amount * fee_rate;
+    let fee_amount = apply_rounding(fee_amount, rounding_mode);
+    let invoice_amount = apply_rounding(invoice_amount, rounding_mode);
 
     CalculatedRow {
         site_name: site.name.clone(),
         fee_percent: site.fee_percent,
-        fee_amount: apply_rounding(fee_amount, rounding_mode),
-        invoice_amount: apply_rounding(invoice_amount, rounding_mode),
+        fee_amount,
+        invoice_amount,
+        received_amount: invoice_amount - fee_amount,
     }
 }
 
@@ -143,8 +147,33 @@ pub fn trim_trailing_zero(value: f64) -> String {
     text
 }
 
+pub fn format_number(value: f64) -> String {
+    let digits = integer_string(value);
+    let (sign, digits) = match digits.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", digits.as_str()),
+    };
+
+    let len = digits.len();
+    let mut formatted = String::with_capacity(len + (len.saturating_sub(1) / 3) + sign.len());
+    formatted.push_str(sign);
+
+    for (index, ch) in digits.chars().enumerate() {
+        if index > 0 && (len - index) % 3 == 0 {
+            formatted.push(',');
+        }
+        formatted.push(ch);
+    }
+
+    formatted
+}
+
+pub fn integer_string(value: f64) -> String {
+    (value as i64).to_string()
+}
+
 pub fn format_yen(value: f64) -> String {
-    format!("{}{}", value as i64, jp("円"))
+    format!("{}{}", format_number(value), jp("円"))
 }
 
 pub fn config_path() -> PathBuf {
@@ -223,6 +252,7 @@ mod tests {
 
         assert_eq!(row.fee_amount, 122.0);
         assert_eq!(row.invoice_amount, 1222.0);
+        assert_eq!(row.received_amount, 1100.0);
     }
 
     #[test]
@@ -242,6 +272,7 @@ mod tests {
 
         assert_eq!(row.fee_amount, 122.0);
         assert_eq!(row.invoice_amount, 1222.0);
+        assert_eq!(row.received_amount, 1100.0);
     }
 
     #[test]
@@ -268,6 +299,7 @@ mod tests {
 
         assert!(high_tax.fee_amount > low_tax.fee_amount);
         assert!(high_tax.invoice_amount > low_tax.invoice_amount);
+        assert!(high_tax.received_amount > low_tax.received_amount);
     }
 
     #[test]
@@ -287,6 +319,7 @@ mod tests {
 
         assert_eq!(row.fee_amount, 3103.0);
         assert_eq!(row.invoice_amount, 14103.0);
+        assert_eq!(row.received_amount, 11000.0);
     }
 
     #[test]
@@ -313,6 +346,7 @@ mod tests {
 
         assert_eq!(low_tax.fee_amount, high_tax.fee_amount);
         assert_eq!(low_tax.invoice_amount, high_tax.invoice_amount);
+        assert_eq!(low_tax.received_amount, high_tax.received_amount);
     }
 
     #[test]
@@ -321,6 +355,25 @@ mod tests {
         assert_eq!(apply_rounding(10.5, RoundingMode::Round), 11.0);
         assert_eq!(apply_rounding(10.1, RoundingMode::Ceil), 11.0);
         assert_eq!(apply_rounding(10.9, RoundingMode::Floor), 10.0);
+    }
+
+    #[test]
+    fn formats_numbers_with_commas() {
+        assert_eq!(format_number(0.0), "0");
+        assert_eq!(format_number(1234.0), "1,234");
+        assert_eq!(format_number(123456789.0), "123,456,789");
+    }
+
+    #[test]
+    fn formats_plain_integer_without_commas() {
+        assert_eq!(integer_string(0.0), "0");
+        assert_eq!(integer_string(1234.0), "1234");
+        assert_eq!(integer_string(123456789.0), "123456789");
+    }
+
+    #[test]
+    fn formats_yen_with_commas() {
+        assert_eq!(format_yen(14103.0), "14,103円");
     }
 
     #[test]
@@ -340,6 +393,7 @@ mod tests {
 
         assert_eq!(row.fee_amount, 0.0);
         assert_eq!(row.invoice_amount, 0.0);
+        assert_eq!(row.received_amount, 0.0);
     }
 
     #[test]
