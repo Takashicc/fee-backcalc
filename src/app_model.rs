@@ -1,5 +1,5 @@
 use crate::{
-    AppConfig, CalculatedRow, InputTaxMode, RoundingMode, SiteFee, calculate_row, jp,
+    AppConfig, CalculatedRow, InputTaxMode, RoundingMode, SiteFee, calculate_row,
     parse_non_negative_number, trim_trailing_zero, validate_fee_percent,
 };
 
@@ -278,7 +278,7 @@ impl AppModel {
         if site_name.is_empty() && site_fee.is_empty() {
             None
         } else if site_name.is_empty() {
-            Some(jp("依頼サイト名を入力してください"))
+            Some("依頼サイト名を入力してください".to_string())
         } else {
             validate_fee_percent(site_fee).err()
         }

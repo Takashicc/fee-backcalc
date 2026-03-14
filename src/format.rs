@@ -35,9 +35,5 @@ pub fn integer_string(value: f64) -> String {
 }
 
 pub fn format_yen(value: f64) -> String {
-    format!("{}{}", format_number(value), jp("円"))
-}
-
-pub fn jp(input: &str) -> String {
-    input.to_string()
+    format!("{}{}", format_number(value), "円")
 }

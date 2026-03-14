@@ -1,6 +1,6 @@
 use anyhow::Result;
 use fee_backcalc::{
-    APP_ID, APP_TITLE, AppModel, ModelUpdate, jp, load_config, open_config_directory, save_config,
+    APP_ID, APP_TITLE, AppModel, ModelUpdate, load_config, open_config_directory, save_config,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
@@ -156,7 +156,7 @@ impl AppState {
         match open_config_directory() {
             Ok(_) => {
                 self.save_error = None;
-                window.push_notification(jp("設定フォルダを開きました"), cx);
+                window.push_notification("設定フォルダを開きました", cx);
             }
             Err(err) => {
                 self.save_error = Some(format!("設定フォルダを開けませんでした: {err}"));
@@ -244,18 +244,18 @@ impl Render for AppState {
                                                 .text_2xl()
                                                 .font_semibold()
                                                 .whitespace_nowrap()
-                                                .child(jp(APP_TITLE)),
+                                                .child(APP_TITLE),
                                         )
                                         .child(
                                             div()
                                                 .text_sm()
                                                 .text_color(cx.theme().muted_foreground)
-                                                .child(jp("受け取りたい金額から逆算して、サイト手数料を差し引かれても希望額が残る請求金額を求めます。消費税もあわせて確認できます。")),
+                                                .child("受け取りたい金額から逆算して、サイト手数料を差し引かれても希望額が残る請求金額を求めます。消費税もあわせて確認できます。"),
                                         ),
                                 )
                                 .child(
                                     Button::new("open-config-directory")
-                                        .label(jp("設定ファイルの場所を開く"))
+                                        .label("設定ファイルの場所を開く")
                                         .primary()
                                         .on_click(cx.listener(AppState::on_open_config_directory)),
                                 ),

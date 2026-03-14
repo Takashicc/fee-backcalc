@@ -1,4 +1,4 @@
-use fee_backcalc::{format_yen, integer_string, jp, trim_trailing_zero};
+use fee_backcalc::{format_yen, integer_string, trim_trailing_zero};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
@@ -21,15 +21,13 @@ pub(crate) fn render_right_panel(
         .rounded_xl()
         .border_1()
         .border_color(cx.theme().border)
-        .child(div().font_semibold().child(jp("逆算結果")))
+        .child(div().font_semibold().child("逆算結果"))
         .when(state.model.sites().is_empty(), |this| {
             this.child(
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child(jp(
-                        "手数料設定を追加すると、サイトごとの請求額がここに表示されます。",
-                    )),
+                    .child("手数料設定を追加すると、サイトごとの請求額がここに表示されます。"),
             )
         })
         .when_some(state.model.result_error(), |this, message| {
@@ -55,7 +53,7 @@ fn render_results_table(state: &AppState, cx: &mut Context<AppState>) -> AnyElem
                 .py_8()
                 .text_sm()
                 .text_color(cx.theme().muted_foreground)
-                .child(jp("表示できる請求額がありません。"))
+                .child("表示できる請求額がありません。")
                 .into_any_element(),
         ]
     } else {
@@ -157,7 +155,7 @@ fn render_results_table(state: &AppState, cx: &mut Context<AppState>) -> AnyElem
                 .child(format!(
                     "{} {}",
                     state.model.result_rows().len(),
-                    jp("件の結果")
+                    "件の結果"
                 )),
         )
         .into_any_element()
@@ -176,7 +174,7 @@ fn render_result_head(
         .text_sm()
         .font_semibold()
         .text_color(text_color.unwrap_or(cx.theme().table_head_foreground))
-        .child(jp(label));
+        .child(label.to_string());
     let head = match width {
         Some(width) => head.w(px(width)).flex_none(),
         None => head.flex_1(),

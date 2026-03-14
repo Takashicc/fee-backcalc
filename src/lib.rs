@@ -14,7 +14,7 @@ pub use config::{
     config_dir, config_path, load_config, load_config_from_path, open_config_directory,
     save_config, save_config_to_path,
 };
-pub use format::{format_number, format_yen, integer_string, jp, trim_trailing_zero};
+pub use format::{format_number, format_yen, integer_string, trim_trailing_zero};
 pub use model::{AppConfig, CalculatedRow, InputTaxMode, RoundingMode, SiteFee};
 pub use validation::{parse_non_negative_number, validate_fee_percent};
 

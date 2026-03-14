@@ -1,4 +1,4 @@
-use fee_backcalc::{jp, trim_trailing_zero};
+use fee_backcalc::trim_trailing_zero;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
@@ -39,11 +39,11 @@ pub(crate) fn render_left_panel(
                 .rounded_xl()
                 .border_1()
                 .border_color(cx.theme().border)
-                .child(div().font_semibold().child(jp("逆算条件")))
+                .child(div().font_semibold().child("逆算条件"))
                 .child(
                     v_flex()
                         .gap_2()
-                        .child(div().text_sm().child(jp("受け取りたい金額")))
+                        .child(div().text_sm().child("受け取りたい金額"))
                         .child(NumberInput::new(&state.base_amount_input).w_full())
                         .when_some(base_error, |this, message| {
                             this.child(render_error(message, cx))
@@ -52,10 +52,10 @@ pub(crate) fn render_left_panel(
                 .child(
                     v_flex()
                         .gap_2()
-                        .child(div().text_sm().child(jp("受け取りたい金額の入力形式")))
+                        .child(div().text_sm().child("受け取りたい金額の入力形式"))
                         .child(
                             Select::new(&state.input_tax_mode_select)
-                                .placeholder(jp("入力形式を選択"))
+                                .placeholder("入力形式を選択")
                                 .icon(IconName::ChevronsUpDown)
                                 .w_full(),
                         ),
@@ -63,14 +63,14 @@ pub(crate) fn render_left_panel(
                 .child(
                     v_flex()
                         .gap_2()
-                        .child(div().text_sm().child(jp("消費税率 (%)")))
+                        .child(div().text_sm().child("消費税率 (%)"))
                         .child(
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(jp(
+                                .child(
                                     "手数料の逆算に加えて、請求時の消費税もあわせて計算します。",
-                                )),
+                                ),
                         )
                         .child(NumberInput::new(&state.tax_rate_input).w_full())
                         .when_some(tax_error, |this, message| {
@@ -80,10 +80,10 @@ pub(crate) fn render_left_panel(
                 .child(
                     v_flex()
                         .gap_2()
-                        .child(div().text_sm().child(jp("端数処理")))
+                        .child(div().text_sm().child("端数処理"))
                         .child(
                             Select::new(&state.rounding_mode_select)
-                                .placeholder(jp("端数処理を選択"))
+                                .placeholder("端数処理を選択")
                                 .icon(IconName::ChevronsUpDown)
                                 .w_full(),
                         ),
@@ -100,7 +100,7 @@ pub(crate) fn render_left_panel(
                     h_flex()
                         .justify_between()
                         .items_center()
-                        .child(div().font_semibold().child(jp("手数料設定")))
+                        .child(div().font_semibold().child("手数料設定"))
                         .when_some(state.model.editing_site(), |this, site| {
                             this.child(
                                 div()
@@ -113,13 +113,13 @@ pub(crate) fn render_left_panel(
                 .child(
                     v_flex()
                         .gap_2()
-                        .child(div().text_sm().child(jp("依頼サイト名")))
+                        .child(div().text_sm().child("依頼サイト名"))
                         .child(Input::new(&state.site_name_input).cleanable(true).w_full()),
                 )
                 .child(
                     v_flex()
                         .gap_2()
-                        .child(div().text_sm().child(jp("手数料率 (%)")))
+                        .child(div().text_sm().child("手数料率 (%)"))
                         .child(NumberInput::new(&state.site_fee_input).w_full())
                         .when_some(site_form_error, |this, message| {
                             this.child(render_error(message, cx))
@@ -134,9 +134,9 @@ pub(crate) fn render_left_panel(
                         .child(
                             Button::new("save-site")
                                 .label(if state.model.editing_index().is_some() {
-                                    jp("設定を更新")
+                                    "設定を更新"
                                 } else {
-                                    jp("設定を追加")
+                                    "設定を追加"
                                 })
                                 .primary()
                                 .on_click(cx.listener(AppState::on_add_or_update_site)),
@@ -144,7 +144,7 @@ pub(crate) fn render_left_panel(
                         .when(state.model.editing_index().is_some(), |this| {
                             this.child(
                                 Button::new("cancel-edit")
-                                    .label(jp("編集をキャンセル"))
+                                    .label("編集をキャンセル")
                                     .warning()
                                     .on_click(cx.listener(AppState::on_cancel_edit)),
                             )
@@ -155,7 +155,7 @@ pub(crate) fn render_left_panel(
                         div()
                             .text_sm()
                             .text_color(cx.theme().muted_foreground)
-                            .child(jp("まだ手数料設定はありません。")),
+                            .child("まだ手数料設定はありません。"),
                     )
                 })
                 .children(site_rows),
@@ -198,7 +198,7 @@ fn render_site_row(
                                         div()
                                             .text_xs()
                                             .text_color(cx.theme().primary)
-                                            .child(jp("編集中")),
+                                            .child("編集中"),
                                     )
                                 }),
                         )
@@ -208,7 +208,7 @@ fn render_site_row(
                                 .text_color(cx.theme().muted_foreground)
                                 .child(format!(
                                     "{}: {}%",
-                                    jp("手数料率"),
+                                    "手数料率",
                                     trim_trailing_zero(site.fee_percent)
                                 )),
                         ),
@@ -221,7 +221,7 @@ fn render_site_row(
                         .when(!compact, |this| this.flex_row())
                         .child(
                             Button::new(("edit-site", index))
-                                .label(jp("編集"))
+                                .label("編集")
                                 .info()
                                 .on_click(cx.listener(move |this, event, window, cx| {
                                     this.on_start_edit_site(index, event, window, cx);
@@ -229,7 +229,7 @@ fn render_site_row(
                         )
                         .child(
                             Button::new(("delete-site", index))
-                                .label(jp("削除"))
+                                .label("削除")
                                 .danger()
                                 .on_click(cx.listener(move |this, event, window, cx| {
                                     this.on_remove_site(index, event, window, cx);
