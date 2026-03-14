@@ -37,6 +37,8 @@ pub(crate) struct AppState {
 
 impl AppState {
     const COMPACT_LAYOUT_BREAKPOINT: f32 = 1100.0;
+    const WINDOW_MIN_WIDTH: f32 = 820.0;
+    const WINDOW_MIN_HEIGHT: f32 = 680.0;
 
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let model = AppModel::from_config(load_config());
@@ -257,6 +259,10 @@ pub(crate) fn open_main_window(cx: &mut AsyncApp) -> Result<()> {
                 ..Default::default()
             }),
             app_id: Some(APP_ID.to_string()),
+            window_min_size: Some(size(
+                px(AppState::WINDOW_MIN_WIDTH),
+                px(AppState::WINDOW_MIN_HEIGHT),
+            )),
             ..Default::default()
         },
         |window, cx| {
