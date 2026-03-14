@@ -1,10 +1,16 @@
 use anyhow::Result;
-use fee_backcalc::{APP_ID, APP_TITLE, AppModel, ModelUpdate, jp, load_config, save_config};
+use fee_backcalc::{
+    APP_ID, APP_TITLE, AppModel, ModelUpdate, jp, load_config, open_config_directory, save_config,
+};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Root, StyledExt as _, input::InputState, scroll::ScrollableElement as _,
-    select::SelectState, v_flex,
+    ActiveTheme, Root, StyledExt as _, WindowExt as _,
+    button::{Button, ButtonVariants as _},
+    input::InputState,
+    scroll::ScrollableElement as _,
+    select::SelectState,
+    v_flex,
 };
 
 use super::{
@@ -98,6 +104,24 @@ impl AppState {
         self.apply_site_form_update(update, window, cx);
     }
 
+    pub(crate) fn on_open_config_directory(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match open_config_directory() {
+            Ok(_) => {
+                self.save_error = None;
+                window.push_notification(jp("設定フォルダを開きました"), cx);
+            }
+            Err(err) => {
+                self.save_error = Some(format!("設定フォルダを開けませんでした: {err}"));
+            }
+        }
+        cx.notify();
+    }
+
     pub(crate) fn apply_update(&mut self, update: ModelUpdate, cx: &mut Context<Self>) {
         if update.should_persist {
             self.persist();
@@ -161,14 +185,35 @@ impl Render for AppState {
                         .when(compact, |this| this.p_4())
                         .when(!compact, |this| this.p_6())
                         .child(
-                            v_flex()
-                                .gap_2()
-                                .child(div().text_2xl().font_semibold().child(jp(APP_TITLE)))
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_4()
+                                .justify_between()
                                 .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(jp("受け取りたい金額から逆算して、サイト手数料を差し引かれても希望額が残る請求金額を求めます。消費税もあわせて確認できます。")),
+                                    v_flex()
+                                        .gap_2()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .child(
+                                            div()
+                                                .text_2xl()
+                                                .font_semibold()
+                                                .whitespace_nowrap()
+                                                .child(jp(APP_TITLE)),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(jp("受け取りたい金額から逆算して、サイト手数料を差し引かれても希望額が残る請求金額を求めます。消費税もあわせて確認できます。")),
+                                        ),
+                                )
+                                .child(
+                                    Button::new("open-config-directory")
+                                        .label(jp("設定ファイルの場所を開く"))
+                                        .primary()
+                                        .on_click(cx.listener(AppState::on_open_config_directory)),
                                 ),
                         )
                         .when_some(self.save_error.clone(), |this, message| {

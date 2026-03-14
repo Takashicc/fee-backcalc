@@ -11,7 +11,8 @@ pub const APP_TITLE: &str = "Fee Backcalc";
 pub use app_model::{AppModel, ModelUpdate};
 pub use calc::{apply_rounding, calculate_row};
 pub use config::{
-    config_path, load_config, load_config_from_path, save_config, save_config_to_path,
+    config_dir, config_path, load_config, load_config_from_path, open_config_directory,
+    save_config, save_config_to_path,
 };
 pub use format::{format_number, format_yen, integer_string, jp, trim_trailing_zero};
 pub use model::{AppConfig, CalculatedRow, InputTaxMode, RoundingMode, SiteFee};

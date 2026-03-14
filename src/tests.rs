@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     AppConfig, AppModel, InputTaxMode, RoundingMode, SiteFee, apply_rounding, calculate_row,
-    config_path, format_number, format_yen, integer_string, load_config_from_path,
+    config_dir, config_path, format_number, format_yen, integer_string, load_config_from_path,
     save_config_to_path,
 };
 
@@ -212,6 +212,13 @@ fn missing_config_returns_default() {
 #[test]
 fn config_path_uses_fee_backcalc_directory() {
     let path = config_path();
+
+    assert!(path.to_string_lossy().contains("fee-backcalc"));
+}
+
+#[test]
+fn config_dir_uses_fee_backcalc_directory() {
+    let path = config_dir();
 
     assert!(path.to_string_lossy().contains("fee-backcalc"));
 }
