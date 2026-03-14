@@ -145,7 +145,7 @@ pub(crate) fn render_left_panel(
                             this.child(
                                 Button::new("cancel-edit")
                                     .label(jp("編集をキャンセル"))
-                                    .ghost()
+                                    .warning()
                                     .on_click(cx.listener(AppState::on_cancel_edit)),
                             )
                         }),
@@ -222,7 +222,7 @@ fn render_site_row(
                         .child(
                             Button::new(("edit-site", index))
                                 .label(jp("編集"))
-                                .ghost()
+                                .info()
                                 .on_click(cx.listener(move |this, event, window, cx| {
                                     this.on_start_edit_site(index, event, window, cx);
                                 })),
@@ -230,7 +230,7 @@ fn render_site_row(
                         .child(
                             Button::new(("delete-site", index))
                                 .label(jp("削除"))
-                                .ghost()
+                                .danger()
                                 .on_click(cx.listener(move |this, event, window, cx| {
                                     this.on_remove_site(index, event, window, cx);
                                 })),
