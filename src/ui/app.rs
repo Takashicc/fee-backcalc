@@ -6,7 +6,8 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Root, StyledExt as _, WindowExt as _,
-    button::{Button, ButtonVariants as _},
+    button::{Button, ButtonVariant, ButtonVariants as _},
+    dialog::DialogButtonProps,
     input::InputState,
     scroll::ScrollableElement as _,
     select::SelectState,
@@ -92,8 +93,48 @@ impl AppState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let update = self.model.remove_site(index);
-        self.apply_site_form_update(update, window, cx);
+        self.confirm_remove_site(index, window, cx);
+    }
+
+    fn confirm_remove_site(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(site) = self.model.sites().get(index) else {
+            return;
+        };
+
+        let site_name = site.name.clone();
+        let view = cx.entity();
+
+        window.open_dialog(cx, move |alert, _, _| {
+            let view = view.clone();
+            alert
+                .confirm()
+                .title(format!("サイト「{}」を削除しますか？", site_name))
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .child(div().text_xs().child("この操作は取り消せません。")),
+                )
+                .button_props(
+                    DialogButtonProps::default()
+                        .ok_text("削除")
+                        .cancel_text("キャンセル")
+                        .ok_variant(ButtonVariant::Danger),
+                )
+                .on_ok({
+                    let site_name = site_name.clone();
+                    move |_, window, cx| {
+                        view.update(cx, |this, cx| {
+                            let update = this.model.remove_site(index);
+                            window.push_notification(
+                                format!("サイト「{}」を削除しました", site_name),
+                                cx,
+                            );
+                            this.apply_site_form_update(update, window, cx);
+                        });
+                        true
+                    }
+                })
+        });
     }
 
     pub(crate) fn on_cancel_edit(
@@ -174,6 +215,7 @@ impl Render for AppState {
         let site_form_error = self.model.site_form_error();
         let compact = Self::is_compact_layout(window);
         let notification_layer = Root::render_notification_layer(window, cx);
+        let dialog_layer = Root::render_dialog_layer(window, cx);
 
         div()
             .size_full()
@@ -247,6 +289,7 @@ impl Render for AppState {
                         ),
                 ),
             )
+            .children(dialog_layer)
             .children(notification_layer)
     }
 }
