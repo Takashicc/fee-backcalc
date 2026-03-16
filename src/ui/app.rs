@@ -75,12 +75,13 @@ impl AppState {
             _subscriptions: Vec::new(),
         };
         state._subscriptions = bindings::build_subscriptions(&state, window, cx);
-        state._subscriptions.push(cx.observe_global_in::<ThemeRegistry>(
-            window,
-            |this, window, cx| {
-                this.sync_theme_select(window, cx);
-            },
-        ));
+        state
+            ._subscriptions
+            .push(
+                cx.observe_global_in::<ThemeRegistry>(window, |this, window, cx| {
+                    this.sync_theme_select(window, cx);
+                }),
+            );
         state
     }
 

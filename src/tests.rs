@@ -7,7 +7,7 @@ use std::{
 use crate::{
     AppConfig, AppModel, InputTaxMode, RoundingMode, SiteFee, apply_rounding, calculate_row,
     config_dir, config_path, format_number, format_yen, integer_string, load_config_from_path,
-    save_config_to_path,
+    save_config_to_path, theme::ensure_bundled_themes_in,
 };
 
 fn temp_config_path(name: &str) -> PathBuf {
@@ -16,6 +16,14 @@ fn temp_config_path(name: &str) -> PathBuf {
         .expect("time")
         .as_nanos();
     env::temp_dir().join(format!("fee-backcalc-{name}-{unique}.json"))
+}
+
+fn temp_dir_path(name: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time")
+        .as_nanos();
+    env::temp_dir().join(format!("fee-backcalc-{name}-{unique}"))
 }
 
 #[test]
@@ -235,6 +243,24 @@ fn loads_legacy_config_without_theme_name() {
     assert_eq!(loaded.theme_name, None);
 
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn ensure_bundled_themes_preserves_existing_theme_files() {
+    let dir = temp_dir_path("themes");
+    let theme_path = dir.join("adventure.json");
+    fs::create_dir_all(&dir).expect("create themes dir");
+    fs::write(&theme_path, "user-customized-theme").expect("write custom theme");
+
+    ensure_bundled_themes_in(&dir).expect("seed bundled themes");
+
+    let actual = fs::read_to_string(&theme_path).expect("read theme");
+    assert_eq!(actual, "user-customized-theme");
+
+    let seeded_theme = dir.join("ayu.json");
+    assert!(seeded_theme.exists());
+
+    let _ = fs::remove_dir_all(dir);
 }
 
 #[test]

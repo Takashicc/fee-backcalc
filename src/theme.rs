@@ -1,6 +1,6 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui::{App, BorrowAppContext, SharedString};
 use gpui_component::{Theme, ThemeRegistry};
@@ -70,12 +70,21 @@ where
 
 pub fn ensure_bundled_themes() -> anyhow::Result<PathBuf> {
     let themes_dir = config_dir().join("themes");
+    ensure_bundled_themes_in(&themes_dir)?;
+
+    Ok(themes_dir)
+}
+
+pub(crate) fn ensure_bundled_themes_in(themes_dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(&themes_dir)?;
 
     for (file_name, contents) in BUNDLED_THEMES {
         let path = themes_dir.join(file_name);
+        if path.exists() {
+            continue;
+        }
         fs::write(path, contents)?;
     }
 
-    Ok(themes_dir)
+    Ok(())
 }
