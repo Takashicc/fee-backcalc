@@ -191,6 +191,7 @@ fn saves_and_loads_config() {
             name: "Shop".to_string(),
             fee_percent: 12.5,
         }],
+        theme_name: Some("Default Dark".to_string()),
     };
 
     save_config_to_path(&config, &path).expect("save");
@@ -207,6 +208,33 @@ fn missing_config_returns_default() {
     let loaded = load_config_from_path(&path).expect("load");
 
     assert_eq!(loaded, AppConfig::default());
+}
+
+#[test]
+fn loads_legacy_config_without_theme_name() {
+    let path = temp_config_path("legacy");
+    fs::write(
+        &path,
+        r#"{
+  "base_amount": "5000",
+  "input_tax_mode": "TaxInclusive",
+  "tax_rate": "8",
+  "rounding_mode": "Ceil",
+  "sites": [
+    {
+      "name": "Shop",
+      "fee_percent": 12.5
+    }
+  ]
+}"#,
+    )
+    .expect("write legacy config");
+
+    let loaded = load_config_from_path(&path).expect("load");
+
+    assert_eq!(loaded.theme_name, None);
+
+    let _ = fs::remove_file(path);
 }
 
 #[test]
@@ -234,6 +262,7 @@ fn app_model_restores_config_and_roundtrips_it() {
             name: "Shop".to_string(),
             fee_percent: 12.5,
         }],
+        theme_name: Some("Default Dark".to_string()),
     };
 
     let model = AppModel::from_config(config.clone());
@@ -243,6 +272,7 @@ fn app_model_restores_config_and_roundtrips_it() {
     assert_eq!(model.input_tax_mode(), InputTaxMode::TaxInclusive);
     assert_eq!(model.rounding_mode(), RoundingMode::Ceil);
     assert_eq!(model.sites(), config.sites.as_slice());
+    assert_eq!(model.theme_name(), Some("Default Dark"));
     assert_eq!(model.to_config(), config);
 }
 
@@ -288,6 +318,7 @@ fn app_model_cancel_edit_clears_site_form_state() {
             name: "Shop".to_string(),
             fee_percent: 12.5,
         }],
+        theme_name: None,
     };
     let mut model = AppModel::from_config(config);
 
@@ -311,6 +342,7 @@ fn app_model_clears_results_for_invalid_input_and_recovers() {
             name: "Shop".to_string(),
             fee_percent: 10.0,
         }],
+        theme_name: None,
     };
     let mut model = AppModel::from_config(config);
 
@@ -327,4 +359,17 @@ fn app_model_clears_results_for_invalid_input_and_recovers() {
     model.set_tax_rate("10");
     assert_eq!(model.result_error(), None);
     assert_eq!(model.result_rows().len(), 1);
+}
+
+#[test]
+fn app_model_updates_theme_name_only_when_changed() {
+    let mut model = AppModel::from_config(AppConfig::default());
+
+    let first_update = model.update_theme_name("Default Dark");
+    assert!(first_update.should_persist);
+    assert_eq!(model.theme_name(), Some("Default Dark"));
+
+    let second_update = model.update_theme_name("Default Dark");
+    assert!(!second_update.should_persist);
+    assert!(!second_update.should_notify);
 }

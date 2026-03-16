@@ -1,5 +1,6 @@
 use fee_backcalc::{AppModel, InputTaxMode, RoundingMode, trim_trailing_zero};
 use gpui::*;
+use gpui_component::ActiveTheme as _;
 use gpui_component::{
     IndexPath,
     input::{InputEvent, InputState, MaskPattern, NumberInputEvent, StepAction},
@@ -77,6 +78,20 @@ pub(super) fn create_rounding_mode_select(
 ) -> Entity<SelectState<Vec<EnumSelectItem<RoundingMode>>>> {
     let options = rounding_options();
     let selected = selected_index(&options, &model.rounding_mode());
+    cx.new(|cx| SelectState::new(options, selected, window, cx))
+}
+
+pub(super) fn create_theme_select(
+    model: &AppModel,
+    window: &mut Window,
+    cx: &mut Context<AppState>,
+) -> Entity<SelectState<Vec<EnumSelectItem<String>>>> {
+    let options = theme_options(cx);
+    let selected_theme = model
+        .theme_name()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| cx.theme().theme_name().to_string());
+    let selected = selected_index(&options, &selected_theme);
     cx.new(|cx| SelectState::new(options, selected, window, cx))
 }
 
@@ -159,6 +174,15 @@ pub(super) fn build_subscriptions(
             },
         ),
         cx.subscribe(
+            &state.theme_select,
+            |this: &mut AppState, _, event: &SelectEvent<Vec<EnumSelectItem<String>>>, cx| {
+                let SelectEvent::Confirm(Some(theme_name)) = event else {
+                    return;
+                };
+                this.on_select_theme(theme_name, cx);
+            },
+        ),
+        cx.subscribe(
             &state.site_name_input,
             |this: &mut AppState, input, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
@@ -215,6 +239,14 @@ fn rounding_options() -> Vec<EnumSelectItem<RoundingMode>> {
         EnumSelectItem::new(RoundingMode::Ceil.label(), RoundingMode::Ceil),
         EnumSelectItem::new(RoundingMode::Floor.label(), RoundingMode::Floor),
     ]
+}
+
+pub(super) fn theme_options(cx: &App) -> Vec<EnumSelectItem<String>> {
+    gpui_component::ThemeRegistry::global(cx)
+        .sorted_themes()
+        .into_iter()
+        .map(|theme| EnumSelectItem::new(theme.name.clone(), theme.name.to_string()))
+        .collect()
 }
 
 fn selected_index<T: PartialEq + Clone + 'static>(
