@@ -45,6 +45,7 @@ pub struct AppConfig {
     pub tax_rate: String,
     pub rounding_mode: RoundingMode,
     pub sites: Vec<SiteFee>,
+    pub theme_name: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -55,6 +56,7 @@ impl Default for AppConfig {
             tax_rate: "10".to_string(),
             rounding_mode: RoundingMode::Round,
             sites: Vec::new(),
+            theme_name: None,
         }
     }
 }

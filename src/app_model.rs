@@ -60,6 +60,7 @@ pub struct AppModel {
     input_tax_mode: InputTaxMode,
     rounding_mode: RoundingMode,
     sites: Vec<SiteFee>,
+    theme_name: Option<String>,
     editing_index: Option<usize>,
     result_rows: Vec<CalculatedRow>,
     result_error: Option<String>,
@@ -75,6 +76,7 @@ impl AppModel {
             input_tax_mode: config.input_tax_mode,
             rounding_mode: config.rounding_mode,
             sites: config.sites,
+            theme_name: config.theme_name,
             editing_index: None,
             result_rows: Vec::new(),
             result_error: None,
@@ -90,6 +92,7 @@ impl AppModel {
             tax_rate: self.tax_rate.clone(),
             rounding_mode: self.rounding_mode,
             sites: self.sites.clone(),
+            theme_name: self.theme_name.clone(),
         }
     }
 
@@ -119,6 +122,10 @@ impl AppModel {
 
     pub fn sites(&self) -> &[SiteFee] {
         &self.sites
+    }
+
+    pub fn theme_name(&self) -> Option<&str> {
+        self.theme_name.as_deref()
     }
 
     pub fn editing_index(&self) -> Option<usize> {
@@ -196,6 +203,16 @@ impl AppModel {
 
         self.rounding_mode = mode;
         self.recalculate();
+        ModelUpdate::persist()
+    }
+
+    pub fn update_theme_name(&mut self, theme_name: impl Into<String>) -> ModelUpdate {
+        let theme_name = theme_name.into();
+        if self.theme_name.as_deref() == Some(theme_name.as_str()) {
+            return ModelUpdate::none();
+        }
+
+        self.theme_name = Some(theme_name);
         ModelUpdate::persist()
     }
 

@@ -1,11 +1,12 @@
 use anyhow::Result;
 use fee_backcalc::{
-    APP_ID, APP_TITLE, AppModel, ModelUpdate, load_config, open_config_directory, save_config,
+    APP_ID, APP_TITLE, AppModel, ModelUpdate, apply_theme_by_name, load_config,
+    open_config_directory, save_config,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Root, StyledExt as _, WindowExt as _,
+    ActiveTheme, Root, StyledExt as _, ThemeRegistry, WindowExt as _,
     button::{Button, ButtonVariant, ButtonVariants as _},
     dialog::DialogButtonProps,
     input::InputState,
@@ -17,10 +18,17 @@ use gpui_component::{
 use super::{
     bindings,
     components::{
-        form_panel::render_left_panel, results_panel::render_right_panel, shared::render_error,
+        form_panel::render_left_panel, results_panel::render_right_panel,
+        settings_panel::render_settings_panel, shared::render_error,
     },
     select_item::EnumSelectItem,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AppScreen {
+    Main,
+    Settings,
+}
 
 pub(crate) struct AppState {
     pub(crate) base_amount_input: Entity<InputState>,
@@ -31,7 +39,9 @@ pub(crate) struct AppState {
         Entity<SelectState<Vec<EnumSelectItem<fee_backcalc::InputTaxMode>>>>,
     pub(crate) rounding_mode_select:
         Entity<SelectState<Vec<EnumSelectItem<fee_backcalc::RoundingMode>>>>,
+    pub(crate) theme_select: Entity<SelectState<Vec<EnumSelectItem<String>>>>,
     pub(crate) model: AppModel,
+    screen: AppScreen,
     pub(crate) save_error: Option<String>,
     _subscriptions: Vec<Subscription>,
 }
@@ -49,6 +59,7 @@ impl AppState {
         let site_fee_input = bindings::create_site_fee_input(window, cx);
         let input_tax_mode_select = bindings::create_input_tax_mode_select(&model, window, cx);
         let rounding_mode_select = bindings::create_rounding_mode_select(&model, window, cx);
+        let theme_select = bindings::create_theme_select(&model, window, cx);
 
         let mut state = Self {
             base_amount_input,
@@ -57,11 +68,20 @@ impl AppState {
             site_fee_input,
             input_tax_mode_select,
             rounding_mode_select,
+            theme_select,
             model,
+            screen: AppScreen::Main,
             save_error: None,
             _subscriptions: Vec::new(),
         };
         state._subscriptions = bindings::build_subscriptions(&state, window, cx);
+        state
+            ._subscriptions
+            .push(
+                cx.observe_global_in::<ThemeRegistry>(window, |this, window, cx| {
+                    this.sync_theme_select(window, cx);
+                }),
+            );
         state
     }
 
@@ -165,6 +185,33 @@ impl AppState {
         cx.notify();
     }
 
+    pub(crate) fn on_show_settings(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.screen = AppScreen::Settings;
+        cx.notify();
+    }
+
+    pub(crate) fn on_show_main(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.screen = AppScreen::Main;
+        cx.notify();
+    }
+
+    pub(crate) fn on_select_theme(&mut self, theme_name: &str, cx: &mut Context<Self>) {
+        if !apply_theme_by_name(theme_name, cx) {
+            self.save_error = Some(format!("テーマを適用できませんでした: {theme_name}"));
+            cx.notify();
+            return;
+        }
+
+        self.save_error = None;
+        let update = self.model.update_theme_name(theme_name.to_string());
+        self.apply_update(update, cx);
+    }
+
     pub(crate) fn apply_update(&mut self, update: ModelUpdate, cx: &mut Context<Self>) {
         if update.should_persist {
             self.persist();
@@ -206,6 +253,29 @@ impl AppState {
     fn is_compact_layout(window: &Window) -> bool {
         window.viewport_size().width <= px(Self::COMPACT_LAYOUT_BREAKPOINT)
     }
+
+    fn sync_theme_select(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let current_theme = self
+            .model
+            .theme_name()
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| cx.theme().theme_name().to_string());
+        let items = bindings::theme_options(cx);
+        self.theme_select.update(cx, |select, cx| {
+            select.set_items(items, window, cx);
+            select.set_selected_value(&current_theme, window, cx);
+        });
+    }
+
+    fn header_copy(&self) -> (&'static str, &'static str) {
+        match self.screen {
+            AppScreen::Main => (
+                APP_TITLE,
+                "受け取りたい金額から逆算して、サイト手数料を差し引かれても希望額が残る請求金額を求めます。消費税もあわせて確認できます。",
+            ),
+            AppScreen::Settings => ("設定", "アプリテーマや設定ファイルの保存先を確認できます。"),
+        }
+    }
 }
 
 impl Render for AppState {
@@ -216,6 +286,27 @@ impl Render for AppState {
         let compact = Self::is_compact_layout(window);
         let notification_layer = Root::render_notification_layer(window, cx);
         let dialog_layer = Root::render_dialog_layer(window, cx);
+        let (header_title, header_description) = self.header_copy();
+        let content = match self.screen {
+            AppScreen::Main => div()
+                .flex()
+                .items_start()
+                .gap_6()
+                .w_full()
+                .when(compact, |this| this.flex_col())
+                .when(!compact, |this| this.flex_row())
+                .child(render_left_panel(
+                    self,
+                    base_error,
+                    tax_error,
+                    site_form_error,
+                    compact,
+                    cx,
+                ))
+                .child(render_right_panel(self, compact, cx))
+                .into_any_element(),
+            AppScreen::Settings => render_settings_panel(self, compact, cx),
+        };
 
         div()
             .size_full()
@@ -244,21 +335,27 @@ impl Render for AppState {
                                                 .text_2xl()
                                                 .font_semibold()
                                                 .whitespace_nowrap()
-                                                .child(APP_TITLE),
+                                                .child(header_title),
                                         )
                                         .child(
                                             div()
                                                 .text_sm()
                                                 .text_color(cx.theme().muted_foreground)
-                                                .child("受け取りたい金額から逆算して、サイト手数料を差し引かれても希望額が残る請求金額を求めます。消費税もあわせて確認できます。"),
+                                                .child(header_description),
                                         ),
                                 )
-                                .child(
-                                    Button::new("open-config-directory")
-                                        .label("設定ファイルの場所を開く")
+                                .child(match self.screen {
+                                    AppScreen::Main => Button::new("open-settings")
+                                        .label("設定")
+                                        .info()
+                                        .on_click(cx.listener(AppState::on_show_settings))
+                                        .into_any_element(),
+                                    AppScreen::Settings => Button::new("back-to-main")
+                                        .label("戻る")
                                         .primary()
-                                        .on_click(cx.listener(AppState::on_open_config_directory)),
-                                ),
+                                        .on_click(cx.listener(AppState::on_show_main))
+                                        .into_any_element(),
+                                }),
                         )
                         .when_some(self.save_error.clone(), |this, message| {
                             this.child(
@@ -269,24 +366,7 @@ impl Render for AppState {
                                     .child(render_error(message, cx)),
                             )
                         })
-                        .child(
-                            div()
-                                .flex()
-                                .items_start()
-                                .gap_6()
-                                .w_full()
-                                .when(compact, |this| this.flex_col())
-                                .when(!compact, |this| this.flex_row())
-                                .child(render_left_panel(
-                                    self,
-                                    base_error,
-                                    tax_error,
-                                    site_form_error,
-                                    compact,
-                                    cx,
-                                ))
-                                .child(render_right_panel(self, compact, cx)),
-                        ),
+                        .child(content),
                 ),
             )
             .children(dialog_layer)

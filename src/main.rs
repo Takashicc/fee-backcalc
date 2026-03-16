@@ -6,7 +6,9 @@
 mod ui;
 
 use anyhow::Result;
+use fee_backcalc::{apply_saved_theme, ensure_bundled_themes};
 use gpui::*;
+use gpui_component::ThemeRegistry;
 use gpui_component_assets::Assets;
 
 fn main() {
@@ -15,6 +17,14 @@ fn main() {
     app.run(|cx| {
         configure_app(cx);
         gpui_component::init(cx);
+        if let Ok(themes_dir) = ensure_bundled_themes()
+            && let Err(err) = ThemeRegistry::watch_dir(themes_dir, cx, |cx| {
+                apply_saved_theme(cx);
+            })
+        {
+            eprintln!("Failed to watch themes directory: {err}");
+        }
+        apply_saved_theme(cx);
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {
                 cx.quit();
