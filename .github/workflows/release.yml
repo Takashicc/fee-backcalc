@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: fee-backcalc
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            binary_name: fee-backcalc
+            archive_name: fee-backcalc-macos.tar.gz
+            archive_type: tar.gz
+          - os: windows-latest
+            binary_name: fee-backcalc.exe
+            archive_name: fee-backcalc-windows.zip
+            archive_type: zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Prepare staging directory
+        shell: bash
+        run: |
+          rm -rf dist
+          mkdir -p "dist/${APP_NAME}"
+          cp "target/release/${{ matrix.binary_name }}" "dist/${APP_NAME}/"
+
+      - name: Create macOS archive
+        if: matrix.archive_type == 'tar.gz'
+        shell: bash
+        run: |
+          tar -czf "${{ matrix.archive_name }}" -C dist "${APP_NAME}"
+
+      - name: Create Windows archive
+        if: matrix.archive_type == 'zip'
+        shell: pwsh
+        run: Compress-Archive -Path "dist/${env:APP_NAME}/*" -DestinationPath "${{ matrix.archive_name }}"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.archive_name }}

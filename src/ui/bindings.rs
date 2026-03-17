@@ -12,6 +12,35 @@ const BASE_AMOUNT_STEP: f64 = 1000.0;
 const RATE_STEP: f64 = 0.1;
 const SITE_FEE_MAX: f64 = 99.9;
 
+#[derive(Clone, Copy)]
+struct StepNumberConfig {
+    step: f64,
+    min: f64,
+    max: Option<f64>,
+    formatter: fn(f64) -> String,
+}
+
+const BASE_AMOUNT_STEP_CONFIG: StepNumberConfig = StepNumberConfig {
+    step: BASE_AMOUNT_STEP,
+    min: 0.0,
+    max: None,
+    formatter: format_decimal_number,
+};
+
+const TAX_RATE_STEP_CONFIG: StepNumberConfig = StepNumberConfig {
+    step: RATE_STEP,
+    min: 0.0,
+    max: None,
+    formatter: format_rate_number,
+};
+
+const SITE_FEE_STEP_CONFIG: StepNumberConfig = StepNumberConfig {
+    step: RATE_STEP,
+    min: 0.0,
+    max: Some(SITE_FEE_MAX),
+    formatter: format_rate_number,
+};
+
 pub(super) fn create_base_amount_input(
     model: &AppModel,
     window: &mut Window,
@@ -100,16 +129,7 @@ pub(super) fn build_subscriptions(
             window,
             |_: &mut AppState, input, event: &NumberInputEvent, window, cx| {
                 let NumberInputEvent::Step(action) = event;
-                step_number_input(
-                    input,
-                    *action,
-                    BASE_AMOUNT_STEP,
-                    0.0,
-                    None,
-                    format_decimal_number,
-                    window,
-                    cx,
-                );
+                step_number_input(input, *action, BASE_AMOUNT_STEP_CONFIG, window, cx);
             },
         ),
         cx.subscribe(
@@ -126,16 +146,7 @@ pub(super) fn build_subscriptions(
             window,
             |_: &mut AppState, input, event: &NumberInputEvent, window, cx| {
                 let NumberInputEvent::Step(action) = event;
-                step_number_input(
-                    input,
-                    *action,
-                    RATE_STEP,
-                    0.0,
-                    None,
-                    format_rate_number,
-                    window,
-                    cx,
-                );
+                step_number_input(input, *action, TAX_RATE_STEP_CONFIG, window, cx);
             },
         ),
         cx.subscribe(
@@ -181,16 +192,7 @@ pub(super) fn build_subscriptions(
             window,
             |_: &mut AppState, input, event: &NumberInputEvent, window, cx| {
                 let NumberInputEvent::Step(action) = event;
-                step_number_input(
-                    input,
-                    *action,
-                    RATE_STEP,
-                    0.0,
-                    Some(SITE_FEE_MAX),
-                    format_rate_number,
-                    window,
-                    cx,
-                );
+                step_number_input(input, *action, SITE_FEE_STEP_CONFIG, window, cx);
             },
         ),
     ]
@@ -246,31 +248,28 @@ fn format_rate_number(value: f64) -> String {
 fn step_number_input(
     input: &Entity<InputState>,
     action: StepAction,
-    step: f64,
-    min: f64,
-    max: Option<f64>,
-    formatter: fn(f64) -> String,
+    config: StepNumberConfig,
     window: &mut Window,
     cx: &mut Context<AppState>,
 ) {
     let raw_value = number_input_value(input, cx);
     let current_value = raw_value.trim().parse::<f64>().unwrap_or(0.0);
     let delta = match action {
-        StepAction::Increment => step,
-        StepAction::Decrement => -step,
+        StepAction::Increment => config.step,
+        StepAction::Decrement => -config.step,
     };
 
     let mut next_value = current_value + delta;
-    if next_value < min {
-        next_value = min;
+    if next_value < config.min {
+        next_value = config.min;
     }
-    if let Some(max) = max
+    if let Some(max) = config.max
         && next_value > max
     {
         next_value = max;
     }
 
     input.update(cx, |state, cx| {
-        state.set_value(formatter(next_value), window, cx);
+        state.set_value((config.formatter)(next_value), window, cx);
     });
 }
