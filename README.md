@@ -57,6 +57,38 @@ cargo run
 cargo test
 ```
 
+ローカルで CI 相当の確認をまとめて行う場合は、次の順で実行します。
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+```
+
+## CI
+
+GitHub Actions では `push` と `pull_request` を契機に、次のチェックを自動実行します。
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test --locked`
+
+## リリース
+
+`vX.Y.Z` 形式のタグを push すると、GitHub Actions が GitHub Releases に配布物を自動公開します。
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+公開される成果物は次の 2 つです。
+
+- `fee-backcalc-macos.tar.gz`
+- `fee-backcalc-windows.zip`
+
+どちらのアーカイブにも、その OS 向けの実行ファイルが含まれます。
+
 ## メモ
 
 - 設定はローカルに保存され、次回起動時に再利用されます
